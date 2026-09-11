@@ -1,0 +1,27 @@
+[package]
+name = "rultra-sense"
+description = "One unified sensing surface for the CrowPi / Raspberry Pi 5 edge box: every onboard sensor and actuator behind a single trait, with verification provenance carried in the type system."
+keywords = ["raspberry-pi", "crowpi", "sensors", "edge", "iot"]
+categories = ["embedded", "hardware-support"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpio-cdev = { version = "0.6", optional = true }
+spidev = { version = "0.6", optional = true }
+i2cdev = { version = "0.6", optional = true }
+
+[features]
+# Default is the mock backend so `cargo test` runs anywhere, including x86 CI
+# with no /dev/i2c-1. Real hardware is opt-in.
+default = []
+hardware = ["dep:gpio-cdev", "dep:spidev", "dep:i2cdev"]

@@ -1,0 +1,8 @@
+# The Pi 5 is aarch64; this repo is developed on x86_64 and cross-compiled.
+# Cross builds must NOT inherit a host linker flag such as `-fuse-ld=mold`:
+# the aarch64 cross-gcc cannot find that linker and fails with
+# `collect2: fatal error: cannot find 'ld'`. Setting rustflags here overrides
+# any host-wide default for this target only.
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+rustflags = ["-C", "link-arg=-fuse-ld=bfd"]

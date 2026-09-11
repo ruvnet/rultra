@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test (no hardware)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The default (mock) backend must work on a runner with no /dev/i2c-1.
+      # If this ever needs hardware to pass, the abstraction has leaked.
+      - run: cargo test --workspace
+
+  cross:
+    name: cross-compile (aarch64 / Raspberry Pi 5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: aarch64-unknown-linux-gnu }
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: build for the Pi
+        # scripts/build-pi.sh clears RUSTFLAGS deliberately: an environment
+        # RUSTFLAGS overrides .cargo/config.toml rather than merging with it.
+        run: ./scripts/build-pi.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rultra-sense-aarch64
+          path: target/aarch64-unknown-linux-gnu/release/rultra-sense
+
+  audit:
+    name: security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with: { token: "${{ secrets.GITHUB_TOKEN }}" }
