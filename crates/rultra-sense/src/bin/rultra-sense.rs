@@ -6,6 +6,7 @@
 //! rultra-sense stream [ms]   JSON-lines telemetry from every responding device
 //! rultra-sense matrix <what>  drive the 8x8 LED matrix:
 //!                             heart | clear | test | scroll <text> [frame_ms]
+//! rultra-sense lcd <what>     drive the 16x2 LCD: write <l1> [l2] | backlight on|off
 //! ```
 //!
 //! Output is JSON Lines on stdout so it pipes into anything. Diagnostics go to
@@ -98,6 +99,22 @@ fn main() -> anyhow::Result<()> {
                     LinuxBackend::matrix_scroll(&text, ms)?;
                 }
                 w => anyhow::bail!("unknown matrix pattern: {w}"),
+            }
+        }
+        #[cfg(all(target_os = "linux", feature = "hardware"))]
+        "lcd" => {
+            use rultra_sense::backend::linux::LinuxBackend;
+            let b = LinuxBackend::open()?;
+            match args.get(2).map(String::as_str).unwrap_or("write") {
+                "backlight" => {
+                    let on = args.get(3).map(String::as_str) != Some("off");
+                    b.lcd_backlight(on)?;
+                }
+                "write" => b.lcd_write(
+                    args.get(3).map(String::as_str).unwrap_or("rultra"),
+                    args.get(4).map(String::as_str).unwrap_or(""),
+                )?,
+                w => anyhow::bail!("unknown lcd command: {w}"),
             }
         }
         other => {

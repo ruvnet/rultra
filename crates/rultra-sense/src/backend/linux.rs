@@ -72,6 +72,30 @@ impl LinuxBackend {
     }
 }
 
+/// The CrowPi LCD is an **MCP23008** I2C expander driving an HD44780 — not the
+/// far more common PCF8574 "1602 I2C" backpack. PCF8574-style writes land in
+/// the MCP23008's IODIR/GPIO registers, so the panel acknowledges and appears
+/// to invert on readback while displaying nothing at all.
+mod lcd {
+    /// I2C address of the expander.
+    pub const ADDR: u8 = 0x21;
+    /// Pin direction register. 0 = output.
+    pub const IODIR: u8 = 0x00;
+    /// Output latch register.
+    pub const GPIO: u8 = 0x09;
+
+    // Pin map, from Elecrow's own lcd.py.
+    /// Register select: low = command, high = data.
+    pub const RS: u8 = 1 << 1;
+    /// Enable strobe; the HD44780 latches on its falling edge.
+    pub const EN: u8 = 1 << 2;
+    /// Backlight, independent of the display controller entirely — which is
+    /// why it makes a good liveness test.
+    pub const BACKLIGHT: u8 = 1 << 7;
+    /// Data nibble occupies GP3..GP6.
+    pub const DATA_SHIFT: u8 = 3;
+}
+
 /// MAX7219 register addresses.
 mod max7219 {
     pub const DECODE_MODE: u8 = 0x09;
@@ -162,6 +186,78 @@ impl LinuxBackend {
     pub fn matrix_display_test(on: bool) -> anyhow::Result<()> {
         let mut spi = Self::open_matrix()?;
         Self::word(&mut spi, max7219::DISPLAY_TEST, u8::from(on))
+    }
+}
+
+impl LinuxBackend {
+    fn lcd_dev(&self) -> anyhow::Result<LinuxI2CDevice> {
+        Ok(LinuxI2CDevice::new(&self.bus, lcd::ADDR as u16)?)
+    }
+
+    /// Clock one nibble in. The HD44780 latches on the *falling* edge of EN,
+    /// so the sequence is set-up, raise, drop — never a single write.
+    fn lcd_nibble(d: &mut LinuxI2CDevice, nibble: u8, rs: u8, backlight: u8) -> anyhow::Result<()> {
+        let base = ((nibble & 0x0F) << lcd::DATA_SHIFT) | rs | backlight;
+        d.smbus_write_byte_data(lcd::GPIO, base)?;
+        d.smbus_write_byte_data(lcd::GPIO, base | lcd::EN)?;
+        // 1us is the datasheet minimum for the enable pulse width; I2C is far
+        // slower than that, so the bus transaction itself satisfies it.
+        d.smbus_write_byte_data(lcd::GPIO, base)?;
+        Ok(())
+    }
+
+    fn lcd_byte(d: &mut LinuxI2CDevice, byte: u8, rs: u8, backlight: u8) -> anyhow::Result<()> {
+        Self::lcd_nibble(d, byte >> 4, rs, backlight)?;
+        Self::lcd_nibble(d, byte & 0x0F, rs, backlight)?;
+        Ok(())
+    }
+
+    /// Turn the backlight on or off. Touches only GP7, so it works even if the
+    /// display controller is unresponsive — the cleanest liveness check there is.
+    pub fn lcd_backlight(&self, on: bool) -> anyhow::Result<()> {
+        let mut d = self.lcd_dev()?;
+        d.smbus_write_byte_data(lcd::IODIR, 0x00)?;
+        d.smbus_write_byte_data(lcd::GPIO, if on { lcd::BACKLIGHT } else { 0 })?;
+        Ok(())
+    }
+
+    /// Bring the HD44780 up in 4-bit mode.
+    ///
+    /// The wake-up sequence is not optional: the controller powers on in an
+    /// 8-bit state, and 0x03 must be sent three times with delays before 0x02
+    /// switches it to 4-bit. Skipping it leaves the panel in whatever mode it
+    /// happened to boot in.
+    pub fn lcd_init(&self) -> anyhow::Result<LinuxI2CDevice> {
+        let mut d = self.lcd_dev()?;
+        d.smbus_write_byte_data(lcd::IODIR, 0x00)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let bl = lcd::BACKLIGHT;
+        for wait in [5u64, 5, 1] {
+            Self::lcd_nibble(&mut d, 0x03, 0, bl)?;
+            std::thread::sleep(std::time::Duration::from_millis(wait));
+        }
+        Self::lcd_nibble(&mut d, 0x02, 0, bl)?; // enter 4-bit mode
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        Self::lcd_byte(&mut d, 0x28, 0, bl)?; // 4-bit, 2 lines, 5x8 font
+        Self::lcd_byte(&mut d, 0x08, 0, bl)?; // display off
+        Self::lcd_byte(&mut d, 0x01, 0, bl)?; // clear
+        std::thread::sleep(std::time::Duration::from_millis(2)); // clear is slow
+        Self::lcd_byte(&mut d, 0x06, 0, bl)?; // entry mode: increment, no shift
+        Self::lcd_byte(&mut d, 0x0C, 0, bl)?; // display on, cursor off
+        Ok(d)
+    }
+
+    /// Write up to two 16-character lines.
+    pub fn lcd_write(&self, line1: &str, line2: &str) -> anyhow::Result<()> {
+        let mut d = self.lcd_init()?;
+        let bl = lcd::BACKLIGHT;
+        for (addr, text) in [(0x80u8, line1), (0xC0u8, line2)] {
+            Self::lcd_byte(&mut d, addr, 0, bl)?;
+            for c in text.chars().take(16) {
+                Self::lcd_byte(&mut d, c as u8, lcd::RS, bl)?;
+            }
+        }
+        Ok(())
     }
 }
 
