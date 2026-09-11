@@ -4,6 +4,7 @@
 //! rultra-sense inventory     what the board carries, and how well it is known
 //! rultra-sense probe         which devices answer right now
 //! rultra-sense stream [ms]   JSON-lines telemetry from every responding device
+//! rultra-sense matrix <what>  drive the 8x8 LED matrix: heart|clear|test
 //! ```
 //!
 //! Output is JSON Lines on stdout so it pipes into anything. Diagnostics go to
@@ -73,6 +74,24 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(period));
+            }
+        }
+        #[cfg(all(target_os = "linux", feature = "hardware"))]
+        "matrix" => {
+            use rultra_sense::backend::linux::LinuxBackend;
+            const HEART: [u8; 8] = [0x00, 0x66, 0xff, 0xff, 0xff, 0x7e, 0x3c, 0x18];
+            match args.get(2).map(String::as_str).unwrap_or("heart") {
+                "heart" => LinuxBackend::matrix_draw(&HEART)?,
+                "clear" => LinuxBackend::matrix_draw(&[0; 8])?,
+                "test" => {
+                    for _ in 0..5 {
+                        LinuxBackend::matrix_display_test(true)?;
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        LinuxBackend::matrix_display_test(false)?;
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                    }
+                }
+                w => anyhow::bail!("unknown matrix pattern: {w}"),
             }
         }
         other => {

@@ -132,22 +132,28 @@ pub const CATALOG: &[Device] = &[
         id: DeviceId::Matrix,
         part: "MAX7219",
         bus: Bus::Spi {
-            dev: "/dev/spidev0.0",
-            cs_gpio: Some(26),
+            dev: "/dev/spidev0.1",
+            cs_gpio: None,
         },
         kind: DeviceKind::Actuator,
         verification: Verification::Untested,
-        evidence: "CS is GPIO26 (software), not a hardware CE; per-word CS toggling \
-                   implemented but visible output not yet confirmed by an observer.",
+        evidence: "SPI0 CE1, hardware chip-select — NOT a software CS on GPIO26. The \
+                   board silkscreen \"CS: GPIO 26\" means PHYSICAL pin 26, which is BCM \
+                   GPIO7 = CE1; the vendor manual transposes the GPIO numbers for its \
+                   two SPI rows. Elecrow's own driver uses spi(port=0, device=1). \
+                   Bus defaults to 125 MHz, 12.5x over the MAX7219's 10 MHz limit — \
+                   the speed MUST be set explicitly per transfer.",
     },
     Device {
         id: DeviceId::Lcd,
-        part: "PCF8574 + HD44780",
+        part: "MCP23008 + HD44780",
         bus: Bus::I2c { addr: 0x21 },
         kind: DeviceKind::Actuator,
         verification: Verification::AcksButSilent,
-        evidence: "ACKs at 0x21 and inverts on readback; no init sequence has yet \
-                   produced visible output. Suspected UX1/UX5 DIP routing.",
+        evidence: "MCP23008 expander, NOT the common PCF8574 backpack — backlight is \
+                   GP7, RS=GP1, E=GP2, D4-D7=GP3..GP6. PCF8574-style writes land in \
+                   IODIR/GPIO registers, which is why it ACKs and appears to invert \
+                   on readback while displaying nothing. Not yet confirmed lit.",
     },
     Device {
         id: DeviceId::Buttons,
