@@ -88,6 +88,7 @@ Decisions live in [`docs/adr/`](./docs/adr):
 
 - [ADR-0001](./docs/adr/0001-purpose-and-scope.md) — what rultra is, and what it refuses to be
 - [ADR-0002](./docs/adr/0002-one-sensor-to-rule-them-all.md) — one sensing surface, verification in the type system
+- [ADR-0003](./docs/adr/0003-composition-of-the-ruvnet-stack.md) — composing autogenous, ruvector, MetaHarness and ruflo
 
 ## Contributing
 
