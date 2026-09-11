@@ -128,6 +128,34 @@ impl LinuxBackend {
         Ok(())
     }
 
+    /// Convert an 8-column window (column-major, bit 0 = top) into the eight
+    /// row bytes the MAX7219 wants (bit 7 = leftmost column).
+    fn columns_to_rows(window: &[u8]) -> [u8; 8] {
+        let mut rows = [0u8; 8];
+        for (x, col) in window.iter().take(8).enumerate() {
+            for (y, row) in rows.iter_mut().enumerate() {
+                if col & (1 << y) != 0 {
+                    *row |= 1 << (7 - x);
+                }
+            }
+        }
+        rows
+    }
+
+    /// Scroll text across the panel, right to left.
+    pub fn matrix_scroll(text: &str, frame_ms: u64) -> anyhow::Result<()> {
+        let cols = crate::font::columns(text);
+        let mut spi = Self::matrix_init()?;
+        for start in 0..cols.len().saturating_sub(7) {
+            let rows = Self::columns_to_rows(&cols[start..]);
+            for (i, b) in rows.iter().enumerate() {
+                Self::word(&mut spi, i as u8 + 1, *b)?;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(frame_ms));
+        }
+        Ok(())
+    }
+
     /// Light every LED from the chip's own oscillator, bypassing row RAM.
     /// Per the datasheet this overrides shutdown, so if display-test produces
     /// nothing the words are not reaching the chip at all.

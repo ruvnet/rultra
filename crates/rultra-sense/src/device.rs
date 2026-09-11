@@ -136,13 +136,15 @@ pub const CATALOG: &[Device] = &[
             cs_gpio: None,
         },
         kind: DeviceKind::Actuator,
-        verification: Verification::Untested,
-        evidence: "SPI0 CE1, hardware chip-select — NOT a software CS on GPIO26. The \
+        verification: Verification::Working,
+        evidence: "Confirmed lit by an observer. SPI0 CE1, hardware chip-select — NOT a software CS on GPIO26. The \
                    board silkscreen \"CS: GPIO 26\" means PHYSICAL pin 26, which is BCM \
                    GPIO7 = CE1; the vendor manual transposes the GPIO numbers for its \
                    two SPI rows. Elecrow's own driver uses spi(port=0, device=1). \
-                   Bus defaults to 125 MHz, 12.5x over the MAX7219's 10 MHz limit — \
-                   the speed MUST be set explicitly per transfer.",
+                   Root cause of earlier silence: the bus defaults to the devicetree \
+                   125 MHz, 12.5x over the MAX7219's 10 MHz limit, which fails silently \
+                   and identically on every chip-select. The speed MUST be set \
+                   explicitly; it is not optional.",
     },
     Device {
         id: DeviceId::Lcd,

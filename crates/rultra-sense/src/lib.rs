@@ -13,6 +13,7 @@
 
 pub mod backend;
 pub mod device;
+pub mod font;
 
 pub use device::{Bus, Device, DeviceId, DeviceKind, Verification};
 

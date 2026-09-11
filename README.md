@@ -29,7 +29,7 @@ genuinely different states, and this board has one of each:
 | BH1750 light sensor | I2C `0x5c` | **Working** | Returns 37–58 lux, tracks real light changes |
 | HT16K33 segment display | I2C `0x70` | **Working** | Digits observed changing on the physical display |
 | PCF8574 LCD | I2C `0x21` | **Acks but silent** | Chip acknowledges and inverts on readback — but has never displayed anything |
-| MAX7219 8×8 matrix | SPI, CS on **GPIO26** | **Untested** | SPI has no ACK; a present `spidev` node proves nothing about the chip |
+| MAX7219 8×8 matrix | SPI0 **CE1** (`spidev0.1`) | **Working** | Lit and confirmed — after the clock was set explicitly; the 125 MHz default is 12.5× the part’s limit |
 
 So `rultra` puts that distinction in the type system:
 

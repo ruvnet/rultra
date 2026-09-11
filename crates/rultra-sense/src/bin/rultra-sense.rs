@@ -4,7 +4,8 @@
 //! rultra-sense inventory     what the board carries, and how well it is known
 //! rultra-sense probe         which devices answer right now
 //! rultra-sense stream [ms]   JSON-lines telemetry from every responding device
-//! rultra-sense matrix <what>  drive the 8x8 LED matrix: heart|clear|test
+//! rultra-sense matrix <what>  drive the 8x8 LED matrix:
+//!                             heart | clear | test | scroll <text> [frame_ms]
 //! ```
 //!
 //! Output is JSON Lines on stdout so it pipes into anything. Diagnostics go to
@@ -90,6 +91,11 @@ fn main() -> anyhow::Result<()> {
                         LinuxBackend::matrix_display_test(false)?;
                         std::thread::sleep(std::time::Duration::from_millis(400));
                     }
+                }
+                "scroll" => {
+                    let text = args.get(3).cloned().unwrap_or_else(|| "RULTRA".to_string());
+                    let ms = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(60);
+                    LinuxBackend::matrix_scroll(&text, ms)?;
                 }
                 w => anyhow::bail!("unknown matrix pattern: {w}"),
             }
