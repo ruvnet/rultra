@@ -1,0 +1,19 @@
+[package]
+name = "rultra-evolve"
+description = "Turns observed box telemetry into a typed autogenous mutation, gates it, applies it, and rolls it back — the governed self-optimization loop for the rultra edge node."
+keywords = ["evolution", "governance", "edge", "self-optimizing"]
+categories = ["embedded"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+sha2 = "0.10"
+agl-types = { git = "https://github.com/ruvnet/autogenous", rev = "bfa4c48" }
+rultra-score = { path = "../rultra-score" }
