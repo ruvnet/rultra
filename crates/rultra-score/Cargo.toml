@@ -1,0 +1,17 @@
+[package]
+name = "rultra-score"
+description = "Rust port of the MetaHarness parent-vs-child promotion methodology (five gates, seeded bootstrap CI), emitting an autogenous agl-types FitnessVector."
+keywords = ["benchmarking", "bootstrap", "statistics", "evolution"]
+categories = ["algorithms"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+# The promotion authority (ADR-0003). Pinned by rev: this is a research
+# prototype and its types are not yet published to crates.io.
+agl-types = { git = "https://github.com/ruvnet/autogenous", rev = "bfa4c48" }
