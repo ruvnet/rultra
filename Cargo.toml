@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/rultra-sense", "crates/rultra-score", "crates/rultra-evolve"]
+members = ["crates/rultra-sense", "crates/rultra-score", "crates/rultra-evolve", "crates/rultra-witness"]
 
 [workspace.package]
 version = "0.1.0"

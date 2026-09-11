@@ -1,0 +1,18 @@
+[package]
+name = "rultra-witness"
+description = "One append-only, hash-chained, ed25519-signed audit trail spanning observation, proposal, gate decision and promotion or rollback — cross-referencing the separate receipt chains of ruvector and autogenous."
+keywords = ["audit", "ed25519", "hash-chain", "provenance"]
+categories = ["cryptography"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }

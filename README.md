@@ -89,6 +89,31 @@ Decisions live in [`docs/adr/`](./docs/adr):
 - [ADR-0001](./docs/adr/0001-purpose-and-scope.md) — what rultra is, and what it refuses to be
 - [ADR-0002](./docs/adr/0002-one-sensor-to-rule-them-all.md) — one sensing surface, verification in the type system
 - [ADR-0003](./docs/adr/0003-composition-of-the-ruvnet-stack.md) — composing autogenous, ruvector, MetaHarness and ruflo
+- [ADR-0004](./docs/adr/0004-mutation-scope-mismatch.md) — mapping device policy onto AGL mutation scopes
+
+## The crates
+
+| Crate | What it does |
+|---|---|
+| `rultra-sense` | One trait over every device, with verification provenance |
+| `rultra-score` | Parent-vs-child scoring → an `agl-types` `FitnessVector` |
+| `rultra-evolve` | Telemetry → typed mutation; applier with verified rollback |
+| `rultra-witness` | One signed, hash-chained audit trail across the whole loop |
+
+The governed loop, end to end:
+
+```
+observe ──▶ score ──▶ gate ──▶ promote ──▶ (or roll back)
+   │          │         │          │              │
+   └──────────┴─────────┴──────────┴──────────────┘
+                   one witness chain
+```
+
+`autogenous` owns the gate — typed mutations, an authority ceiling no
+descendant may exceed, and an AND-gate with `min` semantics so a strong score
+in one dimension can never offset a safety failure. `rultra` owns the
+translation on either side of it: turning sensor readings into a mutation, and
+turning a promoted mutation into a change on a real box.
 
 ## Contributing
 
