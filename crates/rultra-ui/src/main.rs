@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 mod api;
+mod asset;
 mod auth;
 mod state;
 

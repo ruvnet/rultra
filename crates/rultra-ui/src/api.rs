@@ -12,7 +12,9 @@ use rultra_witness::Chain;
 use serde_json::{json, Value as J};
 
 pub async fn index() -> Html<&'static str> {
-    Html(include_str!("../ui/index.html"))
+    // One definition, in the module that also structurally validates it — so
+    // what ships is exactly what the tests checked.
+    Html(crate::asset::INDEX)
 }
 
 fn verification_str(v: Verification) -> &'static str {
