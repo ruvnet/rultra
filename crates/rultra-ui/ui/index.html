@@ -273,6 +273,9 @@ async function render(){
 
 async function renderOverview(){
   const s=await api('/api/summary');
+  // Seed with two points on a cold start: a one-point series draws nothing,
+  // which reads as a broken chart rather than an empty one.
+  if(!series.temp.length){series.temp.push(s.die_temp_c);series.lux.push(s.lux)}
   series.temp.push(s.die_temp_c); series.lux.push(s.lux);
   if(series.temp.length>40){series.temp.shift();series.lux.shift()}
   const hot=s.thermally_stressed;

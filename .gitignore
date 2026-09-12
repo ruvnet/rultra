@@ -1,4 +1,5 @@
 /target
+/target-bookworm
 **/*.rs.bk
 *.rvf.lock
 .env
