@@ -224,6 +224,30 @@ seq  3  gated       {"passed": false, "reason": "delta_ci=[-0.500,-0.500] ..."}
 seq  4  rolled_back {"restored_hash": "371e17b2...", "verified": true}
 ```
 
+## Security
+
+The console is a **control surface**, not a dashboard — it can run a governed
+cycle and drive hardware. Two rules follow, both enforced in code:
+
+- **Loopback by default.** `rultra-ui` binds `127.0.0.1` unless told otherwise.
+  Reaching it from another machine is a deliberate act: an SSH tunnel, or an
+  explicit `RULTRA_UI_BIND`.
+- **A non-loopback bind requires a token.** Without `RULTRA_UI_TOKEN`, the
+  binary **refuses to start** on a public address rather than logging a
+  warning — a warning in a log nobody reads is not a control.
+
+```console
+$ RULTRA_UI_BIND=0.0.0.0 rultra-ui
+Error: refusing to bind 0.0.0.0 without authentication: this console can run
+cycles and drive hardware. Set RULTRA_UI_TOKEN, or bind loopback and reach it
+over an SSH tunnel.
+```
+
+The token is compared in constant time, accepted only from `Authorization:
+Bearer` or `X-Rultra-Token`, and **never** from a query parameter — a token in
+a URL lands in server logs, browser history and `Referer` headers. The browser
+keeps it in `sessionStorage`, so it dies with the tab.
+
 ## Honest status
 
 This is a working research prototype, not a product.

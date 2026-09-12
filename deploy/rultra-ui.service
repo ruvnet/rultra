@@ -1,0 +1,24 @@
+# rultra management console.
+#
+# Reads its environment from /etc/rultra/ui.env (mode 0600), which must set
+# RULTRA_UI_TOKEN whenever RULTRA_UI_BIND is not loopback. The binary refuses
+# to start on a non-loopback address without a token, so a misconfiguration
+# fails loudly at boot instead of quietly exposing a control surface.
+[Unit]
+Description=rultra management console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/rultra-ui
+EnvironmentFile=/etc/rultra/ui.env
+Restart=always
+RestartSec=3
+# The console drives I2C/SPI/GPIO and runs the cycle, so it is not sandboxed
+# away from /dev — but it needs nothing else.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

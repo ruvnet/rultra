@@ -140,13 +140,17 @@ body::before{
 .ev.gated{color:var(--warn)} .ev.promoted{color:var(--ok)} .ev.rolled_back{color:var(--bad)}
 
 /* overlays */
-.overlay{position:fixed;inset:0;background:rgba(2,2,5,.78);backdrop-filter:blur(7px);
-  display:grid;place-items:center;z-index:60;animation:fade .2s ease}
+.overlay{position:fixed;inset:0;background:rgba(2,2,5,.88);backdrop-filter:blur(8px);
+  display:grid;place-items:center;z-index:60;animation:fade .2s ease both}
 @keyframes fade{from{opacity:0}to{opacity:1}}
-.sheet{background:#0b0b11;border:1px solid var(--rv-border-light);border-radius:16px;
-  padding:26px 28px;max-width:560px;width:90%;box-shadow:0 24px 70px rgba(0,0,0,.6);
-  animation:rise .28s cubic-bezier(.21,1,.32,1)}
-.sheet h3{margin:0 0 14px;font-size:17px;font-weight:620}
+/* The sheet must read clearly against a near-black page, so it steps up in
+   value and carries a gold-tinted edge rather than relying on the border alone. */
+.sheet{background:#15151d;border:1px solid rgba(232,166,52,.28);border-radius:16px;
+  padding:26px 28px;max-width:560px;width:90%;
+  box-shadow:0 26px 80px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.04),
+             inset 0 1px 0 rgba(255,255,255,.06);
+  animation:rise .28s cubic-bezier(.21,1,.32,1) both}
+.sheet h3{margin:0 0 14px;font-size:18px;font-weight:650;color:var(--rv-gold)}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;font-size:13px;align-items:center}
 .keys kbd{font-family:ui-monospace,monospace;font-size:11.5px;background:var(--rv-surface-light);
   border:1px solid var(--rv-border-light);border-radius:6px;padding:3px 8px;color:var(--rv-gold);
@@ -204,7 +208,49 @@ const PAGES=[
 ];
 let page='overview', timer=null, hist=[];
 const $=s=>document.querySelector(s);
-const api=async(p,o)=>{const r=await fetch(p,o);return r.json().catch(()=>({}))};
+
+/* Token lives in sessionStorage: it survives navigation within the tab and is
+   gone when the tab closes. localStorage would outlive the session on a shared
+   machine, and a URL parameter would land in history and server logs. */
+const TOK=()=>sessionStorage.getItem('rultra_token')||'';
+function authHeaders(extra){
+  const h=Object.assign({},extra||{});
+  const t=TOK(); if(t)h['Authorization']='Bearer '+t;
+  return h;
+}
+const api=async(p,o)=>{
+  o=Object.assign({},o); o.headers=authHeaders(o.headers);
+  const r=await fetch(p,o);
+  if(r.status===401){askToken();return {__unauthorized:true}}
+  return r.json().catch(()=>({}));
+};
+
+function askToken(msg){
+  if($('#tokgate'))return;
+  const o=document.createElement('div'); o.className='overlay'; o.id='tokgate';
+  o.innerHTML=`<div class="sheet"><h3>Console token</h3>
+    <p style="color:var(--rv-text-3);font-size:13px;line-height:1.6;margin:0 0 16px">
+      ${msg||'This console can run governed cycles and drive hardware, so the API requires a token.'}
+      On the box it lives in <span class="mono">/etc/rultra/ui.env</span>.</p>
+    <input id="tokin" type="password" placeholder="token" autocomplete="off" spellcheck="false"
+      style="width:100%;padding:11px 13px;border-radius:9px;background:var(--rv-surface-light);
+             border:1px solid var(--rv-border-light);color:var(--rv-text);font-size:14px;
+             font-family:ui-monospace,monospace;outline:none">
+    <div style="display:flex;gap:9px;margin-top:15px;justify-content:flex-end">
+      <button class="btn gold" id="toksave">Unlock</button></div></div>`;
+  document.body.appendChild(o);
+  const inp=$('#tokin'); inp.focus();
+  const save=()=>{
+    const v=inp.value.trim(); if(!v)return;
+    sessionStorage.setItem('rultra_token',v); o.remove(); render();
+  };
+  $('#toksave').onclick=save;
+  inp.addEventListener('keydown',e=>{
+    e.stopPropagation();
+    if(e.key==='Enter')save();
+    if(e.key==='Escape')o.remove();
+  });
+}
 const fmt=(n,d=1)=>n==null?'—':Number(n).toFixed(d);
 
 function toast(msg,kind=''){
@@ -273,6 +319,7 @@ async function render(){
 
 async function renderOverview(){
   const s=await api('/api/summary');
+  if(s.__unauthorized)return;
   // Seed with two points on a cold start: a one-point series draws nothing,
   // which reads as a broken chart rather than an empty one.
   if(!series.temp.length){series.temp.push(s.die_temp_c);series.lux.push(s.lux)}
@@ -324,6 +371,7 @@ async function renderOverview(){
 
 async function renderDevices(){
   const d=await api('/api/devices');
+  if(d.__unauthorized)return;
   shell(`<div class="grid wide">${d.devices.map(x=>`
     <div class="card" tabindex="0">
       <div class="rowhead">
@@ -339,6 +387,7 @@ async function renderDevices(){
 
 async function renderLoop(){
   const p=await api('/api/policy');
+  if(p.__unauthorized)return;
   shell(`<div class="grid">
     <div class="card" tabindex="0" data-act="cycle">
       <div class="label">Run one cycle</div>
@@ -381,6 +430,7 @@ async function runCycle(){
 
 async function renderWitness(){
   const c=await api('/api/chain');
+  if(c.__unauthorized)return;
   if(!c.entries||!c.entries.length){
     shell(`<div class="empty">No witness entries yet. Run a cycle from the <b>Loop</b> page — press <kbd>3</kbd>.</div>`);
     return;
