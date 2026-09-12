@@ -45,7 +45,12 @@ if ! sudo test -s /etc/rultra/ui.env; then
 fi
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now rultra-ui >/dev/null 2>&1 || sudo systemctl restart rultra-ui
+# enable and restart are SEPARATE steps on purpose. `enable --now` succeeds
+# without doing anything when the unit is already enabled and running, so
+# chaining a restart behind `||` means an upgrade never actually loads the new
+# binary — and the deploy still reports success. That happened.
+sudo systemctl enable rultra-ui >/dev/null 2>&1 || true
+sudo systemctl restart rultra-ui
 sleep 3
 
 echo "── verifying ──"
@@ -58,6 +63,18 @@ echo "  shell:    HTTP $SHELL_CODE (want 200)"
 echo "  api/auth: HTTP $API_CODE (want 401)"
 [ "$SHELL_CODE" = "200" ] || { echo "  FAILED: console shell not served"; exit 1; }
 [ "$API_CODE" = "401" ] || { echo "  FAILED: API answered without a token"; exit 1; }
+
+# Assert the RUNNING process is the binary we just installed. A restart that
+# silently did not happen is the failure this catches; comparing inodes is the
+# only check that cannot be fooled by a successful-looking systemctl call.
+RUNNING_INODE=$(sudo stat -L -c %i "/proc/$(systemctl show -p MainPID --value rultra-ui)/exe" 2>/dev/null || echo none)
+INSTALLED_INODE=$(stat -c %i /usr/local/bin/rultra-ui)
+if [ "$RUNNING_INODE" = "$INSTALLED_INODE" ]; then
+  echo "  running:  the binary just installed"
+else
+  echo "  FAILED: rultra-ui is running a different binary than the one installed"
+  exit 1
+fi
 
 for b in rultra rultra-sense; do
   printf '  %-13s %s\n' "$b" "$(command -v $b)"
