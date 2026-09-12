@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/devices", get(api::devices))
         .route("/api/telemetry", get(api::telemetry))
         .route("/api/policy", get(api::policy))
+        .route("/api/schedule", get(api::schedule))
         .route("/api/chain", get(api::chain))
         .route("/api/cycle", post(api::cycle))
         .route("/api/matrix", post(api::matrix))

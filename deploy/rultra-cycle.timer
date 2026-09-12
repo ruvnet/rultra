@@ -1,0 +1,19 @@
+# Runs a governed cycle every 15 minutes.
+#
+# The cadence is deliberately slow. A control loop that samples far faster than
+# the process it governs does not converge sooner — it just spends power and
+# fills the witness chain. Die temperature moves on a scale of minutes.
+[Unit]
+Description=rultra governed cycle, every 15 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+# Spread the load so a fleet of boxes does not all wake on the same second.
+RandomizedDelaySec=90
+# If the box was asleep or off, run once on resume rather than silently
+# skipping the missed window.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

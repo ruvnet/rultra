@@ -1,0 +1,19 @@
+# One governed cycle. Oneshot: the timer owns the cadence, not a sleep loop
+# inside the binary, so the schedule is visible to and controllable by systemd
+# rather than buried in application code.
+[Unit]
+Description=rultra governed cycle
+After=network.target
+# Do not run cycles while the box is being deployed to, or the parent and child
+# measurements straddle a binary swap and the comparison is meaningless.
+Conflicts=rultra-deploy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rultra cycle 10
+Nice=10
+# The cycle samples sensors for ~20s; if it ever hangs on a bus, kill it rather
+# than letting it block the next tick forever.
+TimeoutStartSec=180
+NoNewPrivileges=true
+ProtectHome=true

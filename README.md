@@ -138,6 +138,11 @@ typed mutation, and turning a promoted mutation into a change on a real box.
 | [`rultra-witness`](./crates/rultra-witness) | One signed, hash-chained audit trail across the loop | 11 |
 | [`rultra`](./crates/rultra) | The binary: runs one governed cycle against real hardware | — |
 
+Cycles also run unattended — `rultra-cycle.timer` fires every 15 minutes with a
+randomized delay, and `Persistent=true` so a missed window runs on resume
+rather than being silently skipped. The console's Loop page shows whether the
+timer is live and what the box last decided.
+
 ```console
 $ sudo rultra cycle          # one full observe → score → gate → promote cycle
 $ sudo rultra chain          # the signed causal record
@@ -252,9 +257,12 @@ keeps it in `sessionStorage`, so it dies with the tab.
 
 This is a working research prototype, not a product.
 
-- **"Self-optimizing" is a weaker claim than it sounds.** Only autogenous's
-  state machine genuinely runs on-device. MetaHarness-style evolution assumes a
-  sandbox and a git tree — a CI workflow, not something running in a field.
+- **"Self-optimizing" means something specific here.** A systemd timer runs a
+  governed cycle every 15 minutes, so the box does improve itself unattended —
+  but only within the one mutation surface it has (poll interval against
+  thermal headroom), and only through the hard gate. It is not evolving its own
+  code. MetaHarness-style evolution assumes a sandbox and a git tree, which is
+  a CI workflow rather than something running in a field.
 - **autogenous's generic types are unproven outside the security domain.** Every
   shipped upstream example is a security antibody package. Repurposing them for
   device policy looks sound but is unproven — see [ADR-0004](./docs/adr/0004-mutation-scope-mismatch.md).

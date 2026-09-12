@@ -386,9 +386,19 @@ async function renderDevices(){
 }
 
 async function renderLoop(){
-  const p=await api('/api/policy');
+  const [p,sch]=await Promise.all([api('/api/policy'),api('/api/schedule')]);
   if(p.__unauthorized)return;
+  const auto=sch.timer_active;
   shell(`<div class="grid">
+    <div class="card" tabindex="0">
+      <div class="rowhead"><div class="label">Unattended</div>
+        <span class="badge ${auto?'working':'untested'}">${auto?'running':'not scheduled'}</span></div>
+      <div class="big" style="font-size:27px;color:${auto?'var(--ok)':'var(--rv-text-3)'}">${auto?'every 15 min':'manual only'}</div>
+      <div class="sub">${auto
+        ? 'A systemd timer runs the governed loop on its own. Without this the box is a tool, not an appliance.'
+        : 'No timer installed — the box only improves itself when you ask it to.'}</div>
+      ${sch.last_decision?`<div class="evi">last decision <b style="color:${sch.last_decision==='promoted'?'var(--ok)':'var(--bad)'}">${sch.last_decision.replace(/_/g,' ')}</b></div>`:''}
+    </div>
     <div class="card" tabindex="0" data-act="cycle">
       <div class="label">Run one cycle</div>
       <div class="big" style="font-size:27px">observe → gate</div>

@@ -102,6 +102,69 @@ pub async fn telemetry() -> Json<J> {
     Json(json!({ "readings": readings, "at": rultra_sense::now() }))
 }
 
+/// Is the box actually running cycles on its own, and what did it last decide?
+///
+/// "Self-optimizing" is only true if something runs the loop unattended. This
+/// endpoint reports the real systemd timer state rather than assuming it, and
+/// says plainly when no schedule is installed.
+pub async fn schedule() -> Json<J> {
+    let active = std::process::Command::new("systemctl")
+        .args(["is-active", "rultra-cycle.timer"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+
+    // `systemctl list-timers` is the only place the *next* elapse is exposed.
+    let next = std::process::Command::new("systemctl")
+        .args([
+            "list-timers",
+            "rultra-cycle.timer",
+            "--no-pager",
+            "--no-legend",
+        ])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Last decision, read from the chain rather than a separate status file —
+    // one source of truth, and it cannot drift from the signed record.
+    let mut last_decision = None;
+    let mut last_reason = None;
+    if let Ok(text) = std::fs::read_to_string(state::state_dir().join("witness.jsonl")) {
+        if let Ok(entries) = Chain::parse_jsonl(&text) {
+            // Walk backwards collecting both, and stop only when both are
+            // found. Breaking on the decision alone always returned a null
+            // reason, because `gated` is written BEFORE promoted/rolled_back
+            // and so is reached later in a reverse scan.
+            for e in entries.iter().rev() {
+                let v = serde_json::to_value(&e.event).unwrap_or(J::Null);
+                match v.get("event").and_then(|x| x.as_str()) {
+                    Some(k @ ("promoted" | "rolled_back")) if last_decision.is_none() => {
+                        last_decision = Some(k.to_string());
+                    }
+                    Some("gated") if last_reason.is_none() => {
+                        last_reason = v.get("reason").and_then(|x| x.as_str()).map(str::to_string);
+                    }
+                    _ => {}
+                }
+                if last_decision.is_some() && last_reason.is_some() {
+                    break;
+                }
+            }
+        }
+    }
+
+    Json(json!({
+        "timer_active": active == "active",
+        "timer_state": active,
+        "next_elapse": next,
+        "last_decision": last_decision,
+        "last_gate_reason": last_reason,
+    }))
+}
+
 pub async fn policy() -> Json<J> {
     let p = state::applier().load();
     Json(json!({
