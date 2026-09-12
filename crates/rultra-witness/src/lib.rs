@@ -145,6 +145,31 @@ impl Chain {
         }
     }
 
+    /// Resume an existing chain so appends continue its sequence.
+    ///
+    /// A process that starts a fresh chain on every run produces a pile of
+    /// one-entry logs that each begin at seq 0 — which is not an audit trail,
+    /// because nothing links yesterday's decision to today's state.
+    pub fn resume(key: SigningKey, entries: Vec<Entry>) -> Self {
+        Self { key, entries }
+    }
+
+    /// Parse a JSON-Lines chain. Malformed lines are an error rather than
+    /// something to skip: silently dropping an unreadable entry would hide
+    /// exactly the tampering this type exists to detect.
+    pub fn parse_jsonl(text: &str) -> Result<Vec<Entry>, ChainError> {
+        let mut out = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let e: Entry =
+                serde_json::from_str(line).map_err(|_| ChainError::Tampered { at: i as u64 })?;
+            out.push(e);
+        }
+        Ok(out)
+    }
+
     /// The public key entries are signed with.
     pub fn verifying_key(&self) -> VerifyingKey {
         self.key.verifying_key()
@@ -448,6 +473,38 @@ mod tests {
             t.verify(&t.verifying_key()),
             Err(ChainError::Tampered { at: 0 })
         );
+    }
+
+    #[test]
+    fn a_resumed_chain_continues_the_sequence_and_still_verifies() {
+        let first = populated();
+        let jsonl = first.to_jsonl();
+
+        let entries = Chain::parse_jsonl(&jsonl).expect("parses");
+        let mut resumed = Chain::resume(key(), entries);
+        assert_eq!(resumed.head(), first.head(), "resume must adopt the head");
+
+        resumed.append(
+            103,
+            Event::Promoted {
+                mutation_id: "poll-2000-101".into(),
+                genome_hash: "bbb".into(),
+            },
+            None,
+            None,
+        );
+        assert_eq!(resumed.entries().len(), 4);
+        assert_eq!(
+            resumed.entries()[3].seq,
+            3,
+            "sequence must continue, not restart"
+        );
+        assert_eq!(resumed.verify(&resumed.verifying_key()), Ok(()));
+    }
+
+    #[test]
+    fn a_malformed_line_is_an_error_not_a_silent_skip() {
+        assert!(Chain::parse_jsonl("{not json}").is_err());
     }
 
     #[test]

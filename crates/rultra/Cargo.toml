@@ -1,0 +1,29 @@
+[package]
+name = "rultra"
+description = "The rultra box: runs one governed observe-score-gate-promote cycle against real hardware, recording every step in a signed witness chain."
+keywords = ["edge", "self-optimizing", "raspberry-pi", "governance"]
+categories = ["embedded", "command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rultra"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+agl-types = { git = "https://github.com/ruvnet/autogenous", rev = "bfa4c48" }
+ed25519-dalek = "2"
+rultra-sense = { path = "../rultra-sense" }
+rultra-score = { path = "../rultra-score" }
+rultra-evolve = { path = "../rultra-evolve" }
+rultra-witness = { path = "../rultra-witness" }
+
+[features]
+default = []
+hardware = ["rultra-sense/hardware"]

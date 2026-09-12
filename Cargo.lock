@@ -304,6 +304,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rultra"
+version = "0.1.0"
+dependencies = [
+ "agl-types",
+ "anyhow",
+ "ed25519-dalek",
+ "rultra-evolve",
+ "rultra-score",
+ "rultra-sense",
+ "rultra-witness",
+ "serde_json",
+]
+
+[[package]]
 name = "rultra-evolve"
 version = "0.1.0"
 dependencies = [
