@@ -71,6 +71,14 @@ body::before{
 .side-foot .row b{color:var(--rv-text-2);font-weight:550;font-variant-numeric:tabular-nums}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;background:var(--off)}
 .dot.live{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2.4s ease-in-out infinite}
+.dot.down{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+/* When the link is down, every number on screen is a memory, not a reading.
+   Desaturating and dimming says so without hiding the last known state. */
+body.stale .main .card .big,
+body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
+.stalebar{display:flex;align-items:center;gap:9px;margin-bottom:16px;padding:10px 14px;
+  border:1px solid rgba(248,81,73,.42);background:rgba(248,81,73,.09);
+  border-radius:11px;font-size:13px;color:#ffb4ae;animation:rise .3s both}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 /* ── main ────────────────────────────────────────────── */
@@ -218,10 +226,47 @@ function authHeaders(extra){
   const t=TOK(); if(t)h['Authorization']='Bearer '+t;
   return h;
 }
+/* Connection state. A monitoring console that keeps showing the last numbers
+   with a healthy indicator when the box has gone away is worse than one that
+   shows nothing: it reports a reading as current that nobody has confirmed.
+   Every fetch updates this, and the UI visibly degrades when it goes stale. */
+const link={ok:null,lastOk:0,fails:0};
+/* `hard` distinguishes the two ways a request fails. A thrown fetch is
+   connection-refused or DNS failure — unambiguous, so report it at once. A
+   non-2xx response may be a single transient blip, so require two before
+   declaring the link down. Treating both the same made the banner and the
+   footer disagree with each other. */
+function markLink(ok,hard){
+  if(ok){link.ok=true;link.lastOk=Date.now();link.fails=0}
+  else if(hard){link.fails++;link.ok=false}
+  else {link.fails++; if(link.fails>=2)link.ok=false}
+  paintLink();
+}
+function paintLink(){
+  const dot=$('#live-dot'), lab=$('#foot-link');
+  if(!dot||!lab)return;
+  if(link.ok===false){
+    dot.classList.remove('live'); dot.classList.add('down');
+    const age=link.lastOk?Math.round((Date.now()-link.lastOk)/1000):null;
+    lab.textContent=age!=null?`lost ${age}s`:'offline';
+    lab.style.color='var(--bad)';
+    document.body.classList.add('stale');
+  }else if(link.ok===true){
+    dot.classList.add('live'); dot.classList.remove('down');
+    lab.textContent='ok'; lab.style.color='';
+    document.body.classList.remove('stale');
+  }
+}
+setInterval(paintLink,1000);
+
 const api=async(p,o)=>{
   o=Object.assign({},o); o.headers=authHeaders(o.headers);
-  const r=await fetch(p,o);
-  if(r.status===401){askToken();return {__unauthorized:true}}
+  let r;
+  try{ r=await fetch(p,o); }
+  catch(e){ markLink(false,true); return {__offline:true}; }
+  if(r.status===401){markLink(true);askToken();return {__unauthorized:true}}
+  markLink(r.ok,false);
+  if(!r.ok)return {__offline:true};
   return r.json().catch(()=>({}));
 };
 
@@ -298,6 +343,18 @@ function back(){
   else toast('nothing to go back to');
 }
 
+/* Keep the last good page on screen and explain, rather than blanking it: the
+   most recent known state is still useful, it just must not look live. */
+function staleShell(){
+  if($('.stalebar'))return;
+  const m=$('#main'); if(!m)return;
+  const b=document.createElement('div');
+  b.className='stalebar';
+  b.innerHTML='<span>⚠</span><span>Lost contact with the box. Everything below is the '
+             +'last known state, not a live reading.</span>';
+  m.prepend(b);
+}
+
 function shell(body,actions=''){
   const p=PAGES.find(p=>p.id===page);
   $('#main').innerHTML=`
@@ -316,6 +373,7 @@ function shell(body,actions=''){
       <span><kbd>r</kbd> refresh</span>
       <span><kbd>?</kbd> keys</span>
     </div>`;
+  document.body.classList.remove('stale');
   stagger();
 }
 function stagger(){
@@ -344,6 +402,7 @@ async function render(){
 async function renderOverview(){
   const s=await api('/api/summary');
   if(s.__unauthorized)return;
+  if(s.__offline)return staleShell();
   // Seed with two points on a cold start: a one-point series draws nothing,
   // which reads as a broken chart rather than an empty one.
   if(!series.temp.length){series.temp.push(s.die_temp_c);series.lux.push(s.lux)}
@@ -396,6 +455,7 @@ async function renderOverview(){
 async function renderDevices(){
   const d=await api('/api/devices');
   if(d.__unauthorized)return;
+  if(d.__offline)return staleShell();
   shell(`<div class="grid wide">${d.devices.map(x=>`
     <div class="card" tabindex="0">
       <div class="rowhead">
@@ -412,6 +472,7 @@ async function renderDevices(){
 async function renderLoop(){
   const [p,sch]=await Promise.all([api('/api/policy'),api('/api/schedule')]);
   if(p.__unauthorized)return;
+  if(p.__offline)return staleShell();
   const auto=sch.timer_active;
   shell(`<div class="grid">
     <div class="card" tabindex="0">
@@ -465,6 +526,7 @@ async function runCycle(){
 async function renderWitness(){
   const c=await api('/api/chain');
   if(c.__unauthorized)return;
+  if(c.__offline)return staleShell();
   if(!c.entries||!c.entries.length){
     shell(`<div class="empty">No witness entries yet. Run a cycle from the <b>Loop</b> page — press <kbd>3</kbd>.</div>`);
     return;
