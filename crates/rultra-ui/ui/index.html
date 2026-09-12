@@ -267,12 +267,36 @@ function renderNav(){
   $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.page));
 }
 
+/* The page lives in location.hash, so every section is linkable, the browser's
+   own back button works, and a refresh returns you where you were instead of
+   dumping you on Overview. hist[] is kept for the in-app Back control, which
+   must behave the same way whether you arrived by key, click or URL. */
 function go(id,push=true){
   if(!PAGES.find(p=>p.id===id))return;
   if(push&&id!==page)hist.push(page);
-  page=id; renderNav(); render();
+  page=id;
+  const want='#'+id;
+  if(location.hash!==want){ suppressHash=true; location.hash=want; }
+  renderNav(); render();
 }
-function back(){ const p=hist.pop(); if(p)go(p,false); else toast('nothing to go back to'); }
+let suppressHash=false;
+function fromHash(){
+  const id=(location.hash||'').replace(/^#/,'');
+  return PAGES.find(p=>p.id===id)?id:'overview';
+}
+addEventListener('hashchange',()=>{
+  // Ignore the echo of our own programmatic hash write; only react to a real
+  // navigation (back button, pasted link, edited URL).
+  if(suppressHash){ suppressHash=false; return; }
+  const id=fromHash();
+  if(id!==page){ page=id; renderNav(); render(); }
+});
+function back(){
+  const p=hist.pop();
+  if(p)go(p,false);
+  else if(history.length>1)history.back();
+  else toast('nothing to go back to');
+}
 
 function shell(body,actions=''){
   const p=PAGES.find(p=>p.id===page);
@@ -563,6 +587,7 @@ addEventListener('keydown',e=>{
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-act]'); if(c){c.focus();act(c.dataset.act)}
 });
+page=fromHash();
 renderNav(); render();
 </script>
 </body>

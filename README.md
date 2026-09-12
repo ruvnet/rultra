@@ -112,6 +112,33 @@ sudo rultra-sense matrix scroll "58 LUX 57C"
 sudo rultra-sense lcd write "rultra online" "matrix: OK"
 ```
 
+## The console
+
+`rultra-ui` is a management console in the same design language, served by a
+Rust backend over the very same crates the CLI uses — `/api/cycle` shells out
+to the `rultra` binary rather than reimplementing the loop, so the console and
+the CLI cannot drift into two different answers about what the box did.
+
+[![The rultra console showing the witness page: a signed, hash-chained causal record of a thermal proposal being gated and rolled back](./docs/assets/rultra-console.png)](./docs/assets/rultra-console.png)
+
+*The Witness page, reading a real chain off the box: the die hit 83.6 °C, a
+backoff was proposed, the gate refused it, and the change was rolled back.*
+
+Five sections — Overview, Devices, Loop, Witness, Hardware — each with its own
+URL, so pages are linkable and the browser's back button works.
+
+**It is fully navigable from the keyboard**, not as an afterthought:
+
+| Key | Action |
+|---|---|
+| <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Move between cards — grid-aware, so it follows the layout as it reflows |
+| <kbd>enter</kbd> / <kbd>space</kbd> | Activate the focused card |
+| <kbd>1</kbd>–<kbd>5</kbd> | Jump to a section · <kbd>j</kbd>/<kbd>k</kbd> to cycle |
+| <kbd>backspace</kbd> | Back · <kbd>r</kbd> refresh · <kbd>c</kbd> run a cycle · <kbd>?</kbd> all keys |
+
+Mouse works everywhere too, every control has a visible focus ring, and the
+whole UI honours `prefers-reduced-motion`.
+
 ## The governed loop
 
 ```
