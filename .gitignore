@@ -2,3 +2,8 @@
 **/*.rs.bk
 *.rvf.lock
 .env
+
+# Local agent tooling state — machine-specific, regenerated, not part of the project
+.claude-flow/
+.swarm/
+.hive-mind/
