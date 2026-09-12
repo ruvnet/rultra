@@ -12,6 +12,11 @@
 [![tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)](#build)
 [![platform](https://img.shields.io/badge/target-aarch64%20%C2%B7%20Pi%205-c51a4a)](#build)
 
+[![rultra running on a Raspberry Pi 5: probe output showing three verification states, and a governed cycle rolling back a thermal proposal](./docs/assets/rultra-demo.svg)](./docs/adr/0005-fitness-must-encode-sustainability.md)
+
+*Real output from a Pi 5 at 83.6 °C. The box proposed backing off, applied it, measured,
+and its own gate refused — then rolled back and signed the record.*
+
 [Quick start](#quick-start) · [The idea](#the-idea-most-sensor-libraries-skip) · [Architecture](#the-governed-loop) · [ADRs](./docs/adr) · [Contributing](./CONTRIBUTING.md)
 
 </div>
