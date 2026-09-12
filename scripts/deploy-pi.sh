@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Build and install rultra on a Raspberry Pi.
+#
+#   scripts/deploy-pi.sh [user@host]        (default: pi@raspberrypi)
+#
+# Deploys ALL binaries together, on purpose. Deploying them piecemeal is how the
+# box ends up running a mix of versions: the console reported a field the
+# installed `rultra` binary did not yet emit, because only the console had been
+# refreshed. One command, one consistent set.
+#
+# Builds through scripts/build-pi.sh, which uses a bookworm container so the
+# sysroot glibc matches Raspberry Pi OS. See that script for why.
+set -euo pipefail
+HOST="${1:-pi@raspberrypi}"
+cd "$(dirname "$0")/.."
+BIN=target-bookworm/aarch64-unknown-linux-gnu/release
+BINARIES="rultra rultra-sense rultra-ui"
+
+echo "── building ──"
+./scripts/build-pi.sh --features hardware $(printf -- '-p %s ' $BINARIES)
+
+echo "── shipping to $HOST ──"
+for b in $BINARIES; do
+  [ -f "$BIN/$b" ] || { echo "missing $BIN/$b"; exit 1; }
+  scp -q "$BIN/$b" "$HOST:/tmp/$b"
+done
+scp -q deploy/rultra-ui.service "$HOST:/tmp/rultra-ui.service"
+
+ssh "$HOST" 'bash -s' <<'REMOTE'
+set -euo pipefail
+for b in rultra rultra-sense rultra-ui; do
+  sudo install -m0755 "/tmp/$b" "/usr/local/bin/$b"
+done
+sudo install -m0644 /tmp/rultra-ui.service /etc/systemd/system/rultra-ui.service
+sudo mkdir -p /etc/rultra /var/lib/rultra
+
+# Generate the console token on first deploy only. It is never printed and
+# never leaves the box; read it from /etc/rultra/ui.env when you need it.
+if ! sudo test -s /etc/rultra/ui.env; then
+  TOK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
+  printf 'RULTRA_UI_BIND=0.0.0.0\nRULTRA_UI_PORT=17880\nRULTRA_UI_TOKEN=%s\n' "$TOK" \
+    | sudo tee /etc/rultra/ui.env >/dev/null
+  sudo chmod 600 /etc/rultra/ui.env
+  echo "generated a console token at /etc/rultra/ui.env (0600, not printed)"
+fi
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now rultra-ui >/dev/null 2>&1 || sudo systemctl restart rultra-ui
+sleep 3
+
+echo "── verifying ──"
+echo "  service:  $(systemctl is-active rultra-ui)"
+# The shell must be reachable and the API must NOT be, without a token. If the
+# second check ever returns 200, the box is exposed and this deploy has failed.
+SHELL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 http://127.0.0.1:17880/)
+API_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 http://127.0.0.1:17880/api/summary)
+echo "  shell:    HTTP $SHELL_CODE (want 200)"
+echo "  api/auth: HTTP $API_CODE (want 401)"
+[ "$SHELL_CODE" = "200" ] || { echo "  FAILED: console shell not served"; exit 1; }
+[ "$API_CODE" = "401" ] || { echo "  FAILED: API answered without a token"; exit 1; }
+
+for b in rultra rultra-sense; do
+  printf '  %-13s %s\n' "$b" "$(command -v $b)"
+done
+REMOTE
+echo "── done ──"
