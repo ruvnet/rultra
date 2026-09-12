@@ -9,7 +9,7 @@
 [![CI](https://github.com/ruvnet/rultra/actions/workflows/ci.yml/badge.svg)](https://github.com/ruvnet/rultra/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.74%2B-orange)](#build)
-[![tests](https://img.shields.io/badge/tests-44%20passing-brightgreen)](#build)
+[![tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)](#build)
 [![platform](https://img.shields.io/badge/target-aarch64%20%C2%B7%20Pi%205-c51a4a)](#build)
 
 [Quick start](#quick-start) · [The idea](#the-idea-most-sensor-libraries-skip) · [Architecture](#the-governed-loop) · [ADRs](./docs/adr) · [Contributing](./CONTRIBUTING.md)
@@ -130,7 +130,14 @@ typed mutation, and turning a promoted mutation into a change on a real box.
 | [`rultra-sense`](./crates/rultra-sense) | One trait over every device, with verification provenance | 15 |
 | [`rultra-score`](./crates/rultra-score) | Parent-vs-child scoring → an `agl-types` `FitnessVector` | 7 |
 | [`rultra-evolve`](./crates/rultra-evolve) | Telemetry → typed mutation; applier with verified rollback | 13 |
-| [`rultra-witness`](./crates/rultra-witness) | One signed, hash-chained audit trail across the loop | 9 |
+| [`rultra-witness`](./crates/rultra-witness) | One signed, hash-chained audit trail across the loop | 11 |
+| [`rultra`](./crates/rultra) | The binary: runs one governed cycle against real hardware | — |
+
+```console
+$ sudo rultra cycle          # one full observe → score → gate → promote cycle
+$ sudo rultra chain          # the signed causal record
+$ sudo rultra policy         # what is in force right now
+```
 
 **The first mutation surface is thermal headroom versus sensor poll rate** —
 chosen because it is measurable today: this board's `get_throttled` has already
@@ -178,6 +185,40 @@ cargo build --features rultra-sense/hardware # real I²C/SPI/GPIO, Linux only
 CI runs `cargo fmt --check`, `clippy -D warnings`, the test suite with no
 hardware, an aarch64 cross-build, and `cargo audit`.
 
+## What a real run looks like
+
+Heated to 83.6 °C with four busy cores, the box proposed backing off, applied
+it, measured, and the gate refused:
+
+```console
+$ sudo rultra cycle 10
+{
+  "decision": "rolled_back",
+  "from": { "poll_interval_ms": 1000 },
+  "to":   { "poll_interval_ms": 2000 },
+  "reason": "delta_ci=[-0.500,-0.500] beats_parent=false gates=false safety=0.00 rollback_verified=true",
+  "witness_entries": 5,
+  "witness_verified": true
+}
+```
+
+That run found a real flaw in the design — the objective made the controller's
+own safety action structurally unpromotable, and every unit test passed both
+before and after the fix. [ADR-0005](./docs/adr/0005-fitness-must-encode-sustainability.md)
+is the writeup. It is the clearest argument in this repo for running a control
+loop on physical hardware rather than a simulation.
+
+The witness chain is continuous across separate invocations, so the record
+survives restarts:
+
+```console
+seq  0  observed    {"die_temp_c": 83.645, "read_error_rate": 0.0, "samples": 10}
+seq  1  proposed    {"mutation_id": "poll-2000-...", "parent_genome_hash": "371e17b2..."}
+seq  2  observed    {"die_temp_c": 83.590, ...}
+seq  3  gated       {"passed": false, "reason": "delta_ci=[-0.500,-0.500] ..."}
+seq  4  rolled_back {"restored_hash": "371e17b2...", "verified": true}
+```
+
 ## Honest status
 
 This is a working research prototype, not a product.
@@ -198,6 +239,7 @@ This is a working research prototype, not a product.
 - [ADR-0002](./docs/adr/0002-one-sensor-to-rule-them-all.md) — one sensing surface, verification in the type system
 - [ADR-0003](./docs/adr/0003-composition-of-the-ruvnet-stack.md) — composing autogenous, ruvector, MetaHarness and ruflo
 - [ADR-0004](./docs/adr/0004-mutation-scope-mismatch.md) — mapping device policy onto AGL mutation scopes
+- [ADR-0005](./docs/adr/0005-fitness-must-encode-sustainability.md) — fitness must encode sustainability, not raw throughput
 
 ## Contributing
 
