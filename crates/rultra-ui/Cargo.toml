@@ -1,0 +1,30 @@
+[package]
+name = "rultra-ui"
+description = "Management console for the rultra box: a Rust backend over the sense/evolve/witness crates, serving a keyboard-navigable single-page UI in the ruOS design language."
+keywords = ["dashboard", "raspberry-pi", "edge", "management"]
+categories = ["web-programming::http-server"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rultra-ui"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+tower-http = { version = "0.5", features = ["cors"] }
+rultra-sense = { path = "../rultra-sense" }
+rultra-evolve = { path = "../rultra-evolve" }
+rultra-witness = { path = "../rultra-witness" }
+
+[features]
+default = []
+hardware = ["rultra-sense/hardware"]

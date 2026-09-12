@@ -37,8 +37,8 @@ impl MockBackend {
                 unit: "celsius".into(),
             },
         );
-        b.attach(DeviceId::Buttons, Value::Bool(false));
-        b.attach(DeviceId::Tilt, Value::Bool(false));
+        b.attach(DeviceId::Buttons, Value::Bool { on: false });
+        b.attach(DeviceId::Tilt, Value::Bool { on: false });
         b
     }
 
@@ -98,6 +98,25 @@ impl Backend for MockBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every variant must survive a JSON round-trip. A tagged enum accepts
+    /// shapes at compile time that it cannot serialize at runtime, so this is
+    /// checked rather than assumed.
+    #[test]
+    fn every_value_variant_round_trips_through_json() {
+        for v in [
+            Value::Scalar {
+                n: 1.5,
+                unit: "lux".into(),
+            },
+            Value::Bool { on: true },
+            Value::Count { n: 7 },
+        ] {
+            let s = serde_json::to_string(&v).expect("must serialize");
+            let back: Value = serde_json::from_str(&s).expect("must deserialize");
+            assert_eq!(v, back);
+        }
+    }
 
     #[test]
     fn empty_board_reports_everything_absent() {

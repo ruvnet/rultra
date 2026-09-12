@@ -48,9 +48,20 @@ pub enum Value {
         unit: String,
     },
     /// A digital line or logical on/off device.
-    Bool(bool),
+    ///
+    /// A struct variant, not `Bool(bool)`: serde's internally-tagged
+    /// representation cannot serialize a newtype variant wrapping a primitive,
+    /// and it fails at *runtime* rather than compile time. The tuple form
+    /// panicked the first time a boolean sensor was actually serialized.
+    Bool {
+        /// Line state.
+        on: bool,
+    },
     /// A discrete count, e.g. a keypad scan code.
-    Count(u64),
+    Count {
+        /// The count.
+        n: u64,
+    },
 }
 
 /// Anything that can be read.
