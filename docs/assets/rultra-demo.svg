@@ -1,56 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="940" height="580" viewBox="0 0 940 580" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace">
-  <defs>
-    <style>
-      .bg   { fill: #0d1117; }
-      .bar  { fill: #161b22; }
-      .t    { font-size: 13.5px; }
-      .dim  { fill: #8b949e; }
-      .cmd  { fill: #e6edf3; }
-      .pr   { fill: #7ee787; }
-      .key  { fill: #79c0ff; }
-      .str  { fill: #a5d6ff; }
-      .ok   { fill: #3fb950; }
-      .warn { fill: #d29922; }
-      .off  { fill: #6e7681; }
-      .bad  { fill: #f85149; }
-      .ttl  { fill: #c9d1d9; font-size: 12.5px; }
-    </style>
-  </defs>
 
-  <rect class="bg" x="0" y="0" width="940" height="580" rx="10"/>
-  <rect class="bar" x="0" y="0" width="940" height="34" rx="10"/>
-  <rect class="bar" x="0" y="24" width="940" height="10"/>
+  <rect fill="#0d1117" x="0" y="0" width="940" height="580" rx="10"/>
+  <rect fill="#161b22" x="0" y="0" width="940" height="34" rx="10"/>
+  <rect fill="#161b22" x="0" y="24" width="940" height="10"/>
   <circle cx="20" cy="17" r="6" fill="#ff5f57"/>
   <circle cx="40" cy="17" r="6" fill="#febc2e"/>
   <circle cx="60" cy="17" r="6" fill="#28c840"/>
-  <text class="ttl" x="470" y="21" text-anchor="middle">pi@raspberrypi — rultra</text>
+  <text fill="#c9d1d9" font-size="12.5" x="470" y="21" text-anchor="middle">pi@raspberrypi — rultra</text>
 
-  <g class="t">
-    <text x="22" y="64"><tspan class="pr">$</tspan> <tspan class="cmd">sudo rultra-sense probe</tspan></text>
+  <g font-size="13.5">
+    <text x="22" y="64"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">sudo rultra-sense probe</tspan></text>
 
-    <text x="22" y="90"><tspan class="dim">{</tspan><tspan class="key">"device"</tspan><tspan class="dim">:</tspan><tspan class="str">"light"</tspan><tspan class="dim">,</tspan><tspan class="key">"verification"</tspan><tspan class="dim">:</tspan><tspan class="ok">"working"</tspan><tspan class="dim">,</tspan><tspan class="key">"detail"</tspan><tspan class="dim">:</tspan><tspan class="str">"ACK at 0x5c"</tspan><tspan class="dim">}</tspan></text>
-    <text x="22" y="112"><tspan class="dim">{</tspan><tspan class="key">"device"</tspan><tspan class="dim">:</tspan><tspan class="str">"matrix"</tspan><tspan class="dim">,</tspan><tspan class="key">"verification"</tspan><tspan class="dim">:</tspan><tspan class="ok">"working"</tspan><tspan class="dim">,</tspan><tspan class="key">"detail"</tspan><tspan class="dim">:</tspan><tspan class="str">"/dev/spidev0.1 present"</tspan><tspan class="dim">}</tspan></text>
-    <text x="22" y="134"><tspan class="dim">{</tspan><tspan class="key">"device"</tspan><tspan class="dim">:</tspan><tspan class="str">"lcd"</tspan><tspan class="dim">,</tspan><tspan class="key">"verification"</tspan><tspan class="dim">:</tspan><tspan class="warn">"acks_but_silent"</tspan><tspan class="dim">,</tspan><tspan class="key">"detail"</tspan><tspan class="dim">:</tspan><tspan class="str">"ACK at 0x21"</tspan><tspan class="dim">}</tspan></text>
-    <text x="22" y="156"><tspan class="dim">{</tspan><tspan class="key">"device"</tspan><tspan class="dim">:</tspan><tspan class="str">"buttons"</tspan><tspan class="dim">,</tspan><tspan class="key">"verification"</tspan><tspan class="dim">:</tspan><tspan class="off">"untested"</tspan><tspan class="dim">,</tspan><tspan class="key">"detail"</tspan><tspan class="dim">:</tspan><tspan class="str">"gpiochip0"</tspan><tspan class="dim">}</tspan></text>
+    <text x="22" y="90"><tspan fill="#8b949e">{</tspan><tspan fill="#79c0ff">"device"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"light"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"verification"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#3fb950">"working"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"detail"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"ACK at 0x5c"</tspan><tspan fill="#8b949e">}</tspan></text>
+    <text x="22" y="112"><tspan fill="#8b949e">{</tspan><tspan fill="#79c0ff">"device"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"matrix"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"verification"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#3fb950">"working"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"detail"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"/dev/spidev0.1 present"</tspan><tspan fill="#8b949e">}</tspan></text>
+    <text x="22" y="134"><tspan fill="#8b949e">{</tspan><tspan fill="#79c0ff">"device"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"lcd"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"verification"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#d29922">"acks_but_silent"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"detail"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"ACK at 0x21"</tspan><tspan fill="#8b949e">}</tspan></text>
+    <text x="22" y="156"><tspan fill="#8b949e">{</tspan><tspan fill="#79c0ff">"device"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"buttons"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"verification"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#6e7681">"untested"</tspan><tspan fill="#8b949e">,</tspan><tspan fill="#79c0ff">"detail"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#a5d6ff">"gpiochip0"</tspan><tspan fill="#8b949e">}</tspan></text>
 
-    <text x="22" y="186" class="dim">« three genuinely different states — and only one of them means "works" »</text>
+    <text x="22" y="186" fill="#8b949e">« three genuinely different states — and only one of them means "works" »</text>
 
-    <text x="22" y="224"><tspan class="pr">$</tspan> <tspan class="cmd">sudo rultra cycle</tspan>   <tspan class="dim"># box is at 83.6 °C under load</tspan></text>
+    <text x="22" y="224"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">sudo rultra cycle</tspan>   <tspan fill="#8b949e"># box is at 83.6 °C under load</tspan></text>
 
-    <text x="22" y="252"><tspan class="dim">{</tspan></text>
-    <text x="40" y="274"><tspan class="key">"decision"</tspan><tspan class="dim">:</tspan> <tspan class="bad">"rolled_back"</tspan><tspan class="dim">,</tspan></text>
-    <text x="40" y="296"><tspan class="key">"from"</tspan><tspan class="dim">:</tspan> <tspan class="dim">{</tspan> <tspan class="key">"poll_interval_ms"</tspan><tspan class="dim">:</tspan> <tspan class="str">1000</tspan> <tspan class="dim">},</tspan></text>
-    <text x="40" y="318"><tspan class="key">"to"</tspan><tspan class="dim">:</tspan>   <tspan class="dim">{</tspan> <tspan class="key">"poll_interval_ms"</tspan><tspan class="dim">:</tspan> <tspan class="str">2000</tspan> <tspan class="dim">},</tspan></text>
-    <text x="40" y="340"><tspan class="key">"reason"</tspan><tspan class="dim">:</tspan> <tspan class="str">"delta_ci=[-0.500,-0.500] beats_parent=false</tspan></text>
-    <text x="121" y="362"><tspan class="str">gates=false safety=0.00 rollback_verified=true"</tspan><tspan class="dim">,</tspan></text>
-    <text x="40" y="384"><tspan class="key">"witness_entries"</tspan><tspan class="dim">:</tspan> <tspan class="str">5</tspan><tspan class="dim">,</tspan> <tspan class="key">"witness_verified"</tspan><tspan class="dim">:</tspan> <tspan class="ok">true</tspan></text>
-    <text x="22" y="406"><tspan class="dim">}</tspan></text>
+    <text x="22" y="252"><tspan fill="#8b949e">{</tspan></text>
+    <text x="40" y="274"><tspan fill="#79c0ff">"decision"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#f85149">"rolled_back"</tspan><tspan fill="#8b949e">,</tspan></text>
+    <text x="40" y="296"><tspan fill="#79c0ff">"from"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#8b949e">{</tspan> <tspan fill="#79c0ff">"poll_interval_ms"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#a5d6ff">1000</tspan> <tspan fill="#8b949e">},</tspan></text>
+    <text x="40" y="318"><tspan fill="#79c0ff">"to"</tspan><tspan fill="#8b949e">:</tspan>   <tspan fill="#8b949e">{</tspan> <tspan fill="#79c0ff">"poll_interval_ms"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#a5d6ff">2000</tspan> <tspan fill="#8b949e">},</tspan></text>
+    <text x="40" y="340"><tspan fill="#79c0ff">"reason"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#a5d6ff">"delta_ci=[-0.500,-0.500] beats_parent=false</tspan></text>
+    <text x="121" y="362"><tspan fill="#a5d6ff">gates=false safety=0.00 rollback_verified=true"</tspan><tspan fill="#8b949e">,</tspan></text>
+    <text x="40" y="384"><tspan fill="#79c0ff">"witness_entries"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#a5d6ff">5</tspan><tspan fill="#8b949e">,</tspan> <tspan fill="#79c0ff">"witness_verified"</tspan><tspan fill="#8b949e">:</tspan> <tspan fill="#3fb950">true</tspan></text>
+    <text x="22" y="406"><tspan fill="#8b949e">}</tspan></text>
 
-    <text x="22" y="440"><tspan class="pr">$</tspan> <tspan class="cmd">sudo rultra chain</tspan></text>
-    <text x="22" y="466"><tspan class="dim">seq  0</tspan>  <tspan class="cmd">observed   </tspan> <tspan class="str">die_temp_c 83.645</tspan></text>
-    <text x="22" y="488"><tspan class="dim">seq  1</tspan>  <tspan class="cmd">proposed   </tspan> <tspan class="str">poll-2000  1000ms → 2000ms</tspan></text>
-    <text x="22" y="510"><tspan class="dim">seq  2</tspan>  <tspan class="cmd">observed   </tspan> <tspan class="str">die_temp_c 83.590</tspan></text>
-    <text x="22" y="532"><tspan class="dim">seq  3</tspan>  <tspan class="cmd">gated      </tspan> <tspan class="bad">passed=false</tspan> <tspan class="str">safety=0.00</tspan></text>
-    <text x="22" y="554"><tspan class="dim">seq  4</tspan>  <tspan class="cmd">rolled_back</tspan> <tspan class="str">verified=true</tspan>   <tspan class="dim">← signed, hash-chained</tspan></text>
+    <text x="22" y="440"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">sudo rultra chain</tspan></text>
+    <text x="22" y="466"><tspan fill="#8b949e">seq  0</tspan>  <tspan fill="#e6edf3">observed   </tspan> <tspan fill="#a5d6ff">die_temp_c 83.645</tspan></text>
+    <text x="22" y="488"><tspan fill="#8b949e">seq  1</tspan>  <tspan fill="#e6edf3">proposed   </tspan> <tspan fill="#a5d6ff">poll-2000  1000ms → 2000ms</tspan></text>
+    <text x="22" y="510"><tspan fill="#8b949e">seq  2</tspan>  <tspan fill="#e6edf3">observed   </tspan> <tspan fill="#a5d6ff">die_temp_c 83.590</tspan></text>
+    <text x="22" y="532"><tspan fill="#8b949e">seq  3</tspan>  <tspan fill="#e6edf3">gated      </tspan> <tspan fill="#f85149">passed=false</tspan> <tspan fill="#a5d6ff">safety=0.00</tspan></text>
+    <text x="22" y="554"><tspan fill="#8b949e">seq  4</tspan>  <tspan fill="#e6edf3">rolled_back</tspan> <tspan fill="#a5d6ff">verified=true</tspan>   <tspan fill="#8b949e">← signed, hash-chained</tspan></text>
   </g>
 </svg>
