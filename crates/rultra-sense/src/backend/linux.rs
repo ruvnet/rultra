@@ -66,6 +66,95 @@ impl LinuxBackend {
         Ok(be as f64 / 1.2)
     }
 
+    /// One HC-SR04 round trip, in centimetres.
+    ///
+    /// The part answers a 10us trigger with an echo pulse whose WIDTH encodes
+    /// time of flight. Dividing by 58 converts microseconds to centimetres:
+    /// sound travels ~343 m/s, the pulse covers the distance twice, and
+    /// 1/(0.0343 cm/us) / 2 == 58.
+    fn range_once() -> anyhow::Result<f64> {
+        use gpio_cdev::{Chip, EventRequestFlags, LineRequestFlags};
+        let mut chip = Chip::new("/dev/gpiochip0")?;
+        let trig = chip
+            .get_line(23)?
+            .request(LineRequestFlags::OUTPUT, 0, "rultra-range")?;
+        let echo_line = chip.get_line(24)?;
+        let echo = echo_line.events(
+            LineRequestFlags::INPUT,
+            EventRequestFlags::BOTH_EDGES,
+            "rultra-range",
+        )?;
+
+        // Settle before triggering. Requesting the line can surface a queued
+        // edge, and the trigger pulse itself crosstalks onto the echo net; both
+        // arrive as a very narrow pulse that reads as a few centimetres. That
+        // is what produced a 4.8cm mean with 1.8cm spread against an empty room.
+        trig.set_value(0)?;
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        trig.set_value(1)?;
+        std::thread::sleep(std::time::Duration::from_micros(10));
+        trig.set_value(0)?;
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(60);
+        let mut rise: Option<u64> = None;
+        for ev in echo {
+            if std::time::Instant::now() > deadline {
+                anyhow::bail!("no echo within 60ms — out of range or nothing reflecting");
+            }
+            let ev = ev?;
+            match ev.event_type() {
+                // Always take the LATEST rising edge: crosstalk from the
+                // trigger can produce a spurious early one, and the real echo
+                // always follows it.
+                gpio_cdev::EventType::RisingEdge => rise = Some(ev.timestamp()),
+                gpio_cdev::EventType::FallingEdge => {
+                    let Some(start) = rise else { continue };
+                    let width_ns = ev.timestamp().saturating_sub(start);
+                    let us = width_ns as f64 / 1000.0;
+                    // Reject the crosstalk pulse rather than reporting it: a
+                    // genuine echo from the part's 2cm minimum is at least
+                    // ~116us, so anything much shorter is not a measurement.
+                    if us < 100.0 {
+                        rise = None;
+                        continue;
+                    }
+                    let cm = us / 58.0;
+                    if !(1.5..=450.0).contains(&cm) {
+                        anyhow::bail!("echo width {us:.0}us is outside the sensor's range");
+                    }
+                    return Ok(cm);
+                }
+            }
+        }
+        anyhow::bail!("echo stream ended without a complete pulse")
+    }
+
+    /// Median of several round trips.
+    ///
+    /// A median rather than a mean: ultrasonic returns occasional wild outliers
+    /// from a secondary reflection, and one bad sample must not drag the
+    /// reported distance. The HC-SR04 datasheet asks for >60ms between cycles
+    /// so the previous burst has decayed.
+    fn read_range_cm() -> anyhow::Result<f64> {
+        let mut samples = Vec::new();
+        let mut last_err = None;
+        for i in 0..5 {
+            if i > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(65));
+            }
+            match Self::range_once() {
+                Ok(v) => samples.push(v),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        if samples.is_empty() {
+            return Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no ultrasonic samples")));
+        }
+        samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(samples[samples.len() / 2])
+    }
+
     fn read_cpu_temp() -> anyhow::Result<f64> {
         let raw = std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")?;
         Ok(raw.trim().parse::<f64>()? / 1000.0)
@@ -297,6 +386,12 @@ impl Backend for LinuxBackend {
                             ),
                         )
                     }
+                    crate::Bus::GpioPair { .. } => (
+                        std::path::Path::new("/dev/gpiochip0").exists(),
+                        // An echo line that is idle proves nothing on its own —
+                        // only a triggered round trip does, which is a read.
+                        "gpiochip0 (round trip required to confirm)".to_string(),
+                    ),
                     crate::Bus::Gpio { .. } => (
                         std::path::Path::new("/dev/gpiochip0").exists(),
                         "gpiochip0".to_string(),
@@ -321,6 +416,10 @@ impl Backend for LinuxBackend {
             DeviceId::CpuTemp => Value::Scalar {
                 n: Self::read_cpu_temp()?,
                 unit: "celsius".into(),
+            },
+            DeviceId::Range => Value::Scalar {
+                n: Self::read_range_cm()?,
+                unit: "centimetre".into(),
             },
             other => anyhow::bail!("{other:?} has no read path on the hardware backend yet"),
         };

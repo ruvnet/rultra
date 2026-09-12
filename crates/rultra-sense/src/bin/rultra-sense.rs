@@ -32,6 +32,7 @@ fn main() -> anyhow::Result<()> {
             for d in device::CATALOG {
                 let mark = match d.verification {
                     Verification::Working => "ok  ",
+                    Verification::Unvalidated => "uncal",
                     Verification::AcksButSilent => "acks",
                     Verification::Untested => "??  ",
                 };

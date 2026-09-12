@@ -49,6 +49,7 @@ each of three genuinely different states:
 | BH1750 light sensor | I²C `0x5c` | ✅ **Working** | Tracks real light: 58 lux in a lit room, 5.8 in the dark |
 | MAX7219 8×8 matrix | SPI0 **CE1** | ✅ **Working** | Lit and confirmed by an observer |
 | HT16K33 segment display | I²C `0x70` | ✅ **Working** | Digits observed changing |
+| HC-SR04 range finder | GPIO 23/24 | 🔵 **Unvalidated** | Stable to ±0.6 cm — but never checked against a known distance |
 | MCP23008 LCD | I²C `0x21` | ⚠️ **Acks but silent** | Chip acknowledges; nothing displayed yet |
 | Buttons / tilt | GPIO | ❓ **Untested** | Lines read once, but the BCM numbers were never recorded |
 
@@ -57,6 +58,7 @@ So verification is a **type**, not a comment:
 ```rust
 pub enum Verification {
     Working,        // observed producing correct output
+    Unvalidated,    // stable, plausible output — never checked against a reference
     AcksButSilent,  // answers on the bus, no observable effect yet
     Untested,       // documented, never exercised here
 }
@@ -304,6 +306,7 @@ This is a working research prototype, not a product.
 - [ADR-0003](./docs/adr/0003-composition-of-the-ruvnet-stack.md) — composing autogenous, ruvector, MetaHarness and ruflo
 - [ADR-0004](./docs/adr/0004-mutation-scope-mismatch.md) — mapping device policy onto AGL mutation scopes
 - [ADR-0005](./docs/adr/0005-fitness-must-encode-sustainability.md) — fitness must encode sustainability, not raw throughput
+- [ADR-0006](./docs/adr/0006-unvalidated-is-not-working.md) — repeatable is not the same as correct
 
 ## Contributing
 

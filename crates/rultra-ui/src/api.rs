@@ -20,6 +20,7 @@ pub async fn index() -> Html<&'static str> {
 fn verification_str(v: Verification) -> &'static str {
     match v {
         Verification::Working => "working",
+        Verification::Unvalidated => "unvalidated",
         Verification::AcksButSilent => "acks_but_silent",
         Verification::Untested => "untested",
     }

@@ -37,6 +37,13 @@ impl MockBackend {
                 unit: "celsius".into(),
             },
         );
+        b.attach(
+            DeviceId::Range,
+            Value::Scalar {
+                n: 42.0,
+                unit: "centimetre".into(),
+            },
+        );
         b.attach(DeviceId::Buttons, Value::Bool { on: false });
         b.attach(DeviceId::Tilt, Value::Bool { on: false });
         b

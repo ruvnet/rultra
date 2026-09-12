@@ -20,6 +20,8 @@ pub enum DeviceId {
     Buttons,
     /// Tilt / vibration switch.
     Tilt,
+    /// HC-SR04 ultrasonic range finder.
+    Range,
 }
 
 /// Whether a device is an input, an output, or both.
@@ -56,6 +58,15 @@ pub enum Bus {
         /// BCM line number.
         line: u32,
     },
+    /// A pair of GPIO lines: one driven, one measured. Time-of-flight parts
+    /// need both, and collapsing them to a single line loses the distinction
+    /// between what we assert and what we observe.
+    GpioPair {
+        /// Line this end drives.
+        trigger: u32,
+        /// Line the device drives back.
+        echo: u32,
+    },
     /// Exposed by the kernel through sysfs rather than a raw bus.
     Sysfs {
         /// Path to read.
@@ -72,6 +83,16 @@ pub enum Bus {
 pub enum Verification {
     /// Observed producing correct output. The only variant that means "works".
     Working,
+    /// Produces stable, plausible output, but no reading has been checked
+    /// against a known reference.
+    ///
+    /// This is where most real sensors actually live, and conflating it with
+    /// `Working` is the most common way an inventory becomes untrue. A device
+    /// can return beautifully repeatable numbers that are beautifully wrong:
+    /// repeatability is a property of the measurement path, accuracy is a
+    /// property of its agreement with the world, and only the second one is
+    /// what a reader assumes when told a sensor works.
+    Unvalidated,
     /// The chip acknowledges on its bus, but no configuration has yet produced
     /// an observable effect. Strongly suggests the signal is routed elsewhere —
     /// on the CrowPi, through the `UX1`/`UX5` DIP banks.
@@ -176,6 +197,21 @@ pub const CATALOG: &[Device] = &[
         evidence: "State changes observed via libgpiod during bring-up; BCM line not \
                    recorded. Placeholder line number — must be pinned before use.",
     },
+    Device {
+        id: DeviceId::Range,
+        part: "HC-SR04",
+        bus: Bus::GpioPair {
+            trigger: 23,
+            echo: 24,
+        },
+        kind: DeviceKind::Sensor,
+        verification: Verification::Unvalidated,
+        evidence: "Pulsing GPIO23 produces a rising edge on GPIO24, and the driver returns \
+                   stable readings — 4.58cm mean, 0.62cm stdev over 8 samples, tightened \
+                   from 1.82cm once trigger crosstalk was rejected. Repeatable, but NOT \
+                   checked against a known distance: nobody has confirmed an object is \
+                   actually 4.6cm away. Needs a measurement at a ruler-known separation.",
+    },
 ];
 
 /// Look one device up in the catalog.
@@ -200,6 +236,14 @@ mod tests {
         for d in CATALOG {
             assert_eq!(lookup(d.id).map(|x| x.part), Some(d.part));
         }
+    }
+
+    /// An `Unvalidated` device must never be presented as working — that
+    /// conflation is the whole reason the variant exists.
+    #[test]
+    fn unvalidated_is_ranked_below_working() {
+        assert!(Verification::Working < Verification::Unvalidated);
+        assert!(Verification::Unvalidated < Verification::AcksButSilent);
     }
 
     /// A `Working` claim is the only one that may be read as "this works", so
