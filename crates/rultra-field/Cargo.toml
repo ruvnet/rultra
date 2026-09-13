@@ -1,0 +1,24 @@
+[package]
+name = "rultra-field"
+description = "A live-hardware RuField MFS adapter: turns the box's real ultrasonic time-of-flight measurements into rufield.mfs.v0.1 FieldEvents, with honest provenance and confidence."
+keywords = ["rufield", "sensing", "ultrasonic", "provenance"]
+categories = ["embedded"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+sha2 = "0.10"
+# Pinned by rev: RuField v0.1 is a reference stack, not a published crate.
+rufield-core = { git = "https://github.com/ruvnet/rufield", rev = "9955672" }
+rultra-sense = { path = "../rultra-sense" }
+
+[features]
+default = []
+hardware = ["rultra-sense/hardware"]

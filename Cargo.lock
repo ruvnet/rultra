@@ -561,6 +561,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rufield-core"
+version = "0.1.0"
+source = "git+https://github.com/ruvnet/rufield?rev=9955672#995567283606b86594439d6594387ff551a21ede"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rultra"
 version = "0.1.0"
 dependencies = [
@@ -581,6 +590,18 @@ dependencies = [
  "agl-types",
  "anyhow",
  "rultra-score",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "rultra-field"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rufield-core",
+ "rultra-sense",
  "serde",
  "serde_json",
  "sha2",
