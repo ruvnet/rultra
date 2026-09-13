@@ -37,11 +37,15 @@ sudo mkdir -p /etc/rultra /var/lib/rultra
 # Generate the console token on first deploy only. It is never printed and
 # never leaves the box; read it from /etc/rultra/ui.env when you need it.
 if ! sudo test -s /etc/rultra/ui.env; then
+  # Two INDEPENDENT tokens, not one derived from the other: a read-only
+  # credential computed from the control credential is one bug away from being
+  # a control credential.
   TOK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
-  printf 'RULTRA_UI_BIND=0.0.0.0\nRULTRA_UI_PORT=17880\nRULTRA_UI_TOKEN=%s\n' "$TOK" \
-    | sudo tee /etc/rultra/ui.env >/dev/null
+  ROTOK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
+  printf 'RULTRA_UI_BIND=0.0.0.0\nRULTRA_UI_PORT=17880\nRULTRA_UI_TOKEN=%s\nRULTRA_UI_READ_TOKEN=%s\n' \
+    "$TOK" "$ROTOK" | sudo tee /etc/rultra/ui.env >/dev/null
   sudo chmod 600 /etc/rultra/ui.env
-  echo "generated a console token at /etc/rultra/ui.env (0600, not printed)"
+  echo "generated control + read-only console tokens at /etc/rultra/ui.env (0600, not printed)"
 fi
 
 sudo systemctl daemon-reload
@@ -63,6 +67,19 @@ echo "  shell:    HTTP $SHELL_CODE (want 200)"
 echo "  api/auth: HTTP $API_CODE (want 401)"
 [ "$SHELL_CODE" = "200" ] || { echo "  FAILED: console shell not served"; exit 1; }
 [ "$API_CODE" = "401" ] || { echo "  FAILED: API answered without a token"; exit 1; }
+
+# Assert the capability split is real, not just configured. A read-only token
+# that can run a cycle is worse than no split at all, because it is trusted.
+RO=$(sudo grep -oP 'RULTRA_UI_READ_TOKEN=\K.*' /etc/rultra/ui.env 2>/dev/null || true)
+if [ -n "$RO" ]; then
+  RO_READ=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 \
+    -H "Authorization: Bearer $RO" http://127.0.0.1:17880/api/summary)
+  RO_WRITE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 -X POST \
+    -H "Authorization: Bearer $RO" http://127.0.0.1:17880/api/cycle)
+  echo "  read-only: GET $RO_READ (want 200) · POST $RO_WRITE (want 401)"
+  [ "$RO_READ" = "200" ] || { echo "  FAILED: read-only token cannot read"; exit 1; }
+  [ "$RO_WRITE" = "401" ] || { echo "  FAILED: read-only token can WRITE"; exit 1; }
+fi
 
 # Assert the RUNNING process is the binary we just installed. A restart that
 # silently did not happen is the failure this catches; comparing inodes is the

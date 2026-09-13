@@ -277,6 +277,19 @@ cycles and drive hardware. Set RULTRA_UI_TOKEN, or bind loopback and reach it
 over an SSH tunnel.
 ```
 
+**Watching and driving are separate capabilities.** A second, independent
+read-only token (`RULTRA_UI_READ_TOKEN`) grants telemetry, the device catalog
+and the witness chain, and carries **no control authority** — it cannot run a
+cycle or drive hardware. Handing someone a dashboard should not hand them the
+box. The two tokens are independent rather than derived, because a read-only
+credential computed from the control credential is one bug away from being a
+control credential. Setting a read token without a control token is refused at
+startup: it would imply a separation that does not exist while leaving writes
+open.
+
+This follows the admission model in `cognitum-one/cognitum-media` (ADR-0004),
+which issues independent control and listener capabilities for the same reason.
+
 The token is compared in constant time, accepted only from `Authorization:
 Bearer` or `X-Rultra-Token`, and **never** from a query parameter — a token in
 a URL lands in server logs, browser history and `Referer` headers. The browser

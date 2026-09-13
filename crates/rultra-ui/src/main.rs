@@ -28,9 +28,12 @@ async fn guard(req: Request, next: Next) -> Result<Response, axum::http::StatusC
     if req.uri().path() == "/" {
         return Ok(next.run(req).await);
     }
-    let token = std::env::var("RULTRA_UI_TOKEN").ok();
+    let control = std::env::var("RULTRA_UI_TOKEN").ok();
+    let read = std::env::var("RULTRA_UI_READ_TOKEN").ok();
+    let method = req.method().as_str().to_string();
+    let path = req.uri().path().to_string();
     let headers = req.headers().clone();
-    let ok = auth::authorized(token.as_deref(), |k| {
+    let ok = auth::authorized(control.as_deref(), read.as_deref(), &method, &path, |k| {
         headers.get(k).and_then(|v| v.to_str().ok())
     });
     if ok {
@@ -50,7 +53,8 @@ async fn main() -> anyhow::Result<()> {
     // be a deliberate act, because it can run cycles and drive hardware.
     let host = std::env::var("RULTRA_UI_BIND").unwrap_or_else(|_| "127.0.0.1".into());
     let token = std::env::var("RULTRA_UI_TOKEN").ok();
-    let addr = auth::resolve_bind(&host, port, token.as_deref())?;
+    let read_token = std::env::var("RULTRA_UI_READ_TOKEN").ok();
+    let addr = auth::resolve_bind(&host, port, token.as_deref(), read_token.as_deref())?;
 
     let app = Router::new()
         .route("/", get(api::index))
