@@ -14,3 +14,20 @@ authors = ["ruvnet"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+
+# Release profile tuned for an appliance: the binaries live on an SD card with
+# limited headroom and are shipped over the network on every deploy.
+#
+# Deliberately NOT panic = "abort". It would shrink the binaries further, but a
+# panic in the console would then kill the process instead of returning 500,
+# and systemd's Restart=always would turn one bad request into a restart loop.
+# This project has already shipped one latent panic (a serde tagged-enum
+# variant that could not be serialized), so that is not hypothetical.
+[profile.release]
+opt-level = "z"      # size over speed: nothing here is compute-bound, the
+                     # sensing loop spends its time asleep between samples
+lto = "fat"          # cross-crate inlining; the workspace is small enough that
+                     # the longer link is not painful
+codegen-units = 1    # better optimization at the cost of parallel codegen
+strip = "symbols"    # no debugger on the Pi; symbols are dead weight there
+panic = "unwind"     # explicit, see above
