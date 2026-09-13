@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Launch the rultra console as a desktop window.
+#
+# Chromium in --app mode: no tab strip, no address bar, its own window and its
+# own task-bar entry, so it behaves like an application rather than a browser
+# showing a page.
+#
+# It connects to 127.0.0.1 and carries NO credential. The console grants
+# read-only access to loopback when RULTRA_UI_LOCAL_LISTEN=1, so the window can
+# render telemetry without a token living in a launcher script where every user
+# on the box could read it. Driving hardware from this window still requires
+# entering the control token, which is the intended asymmetry.
+set -euo pipefail
+URL="http://127.0.0.1:${RULTRA_UI_PORT:-17880}/"
+
+# A double-clicked launcher races the service on a cold boot. Wait, briefly,
+# rather than showing the user a connection error they cannot act on.
+for _ in $(seq 1 20); do
+  if curl -sf -o /dev/null --max-time 1 "$URL"; then break; fi
+  sleep 0.5
+done
+
+# A separate profile keeps the console's window state and any stored token out
+# of the user's ordinary browsing profile.
+exec chromium \
+  --app="$URL" \
+  --user-data-dir="${HOME}/.local/share/rultra-console" \
+  --class=rultra-console \
+  --window-size=1280,820 \
+  --disable-features=TranslateUI \
+  --no-first-run \
+  "$@"

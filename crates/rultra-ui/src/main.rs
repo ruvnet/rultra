@@ -30,12 +30,26 @@ async fn guard(req: Request, next: Next) -> Result<Response, axum::http::StatusC
     }
     let control = std::env::var("RULTRA_UI_TOKEN").ok();
     let read = std::env::var("RULTRA_UI_READ_TOKEN").ok();
+    let local_listen =
+        auth::local_listen_enabled(std::env::var("RULTRA_UI_LOCAL_LISTEN").ok().as_deref());
+    // From the accepted socket, so a remote client cannot claim to be local.
+    let peer_loopback = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip().is_loopback())
+        .unwrap_or(false);
     let method = req.method().as_str().to_string();
     let path = req.uri().path().to_string();
     let headers = req.headers().clone();
-    let ok = auth::authorized(control.as_deref(), read.as_deref(), &method, &path, |k| {
-        headers.get(k).and_then(|v| v.to_str().ok())
-    });
+    let ok = auth::authorized(
+        control.as_deref(),
+        read.as_deref(),
+        peer_loopback,
+        local_listen,
+        &method,
+        &path,
+        |k| headers.get(k).and_then(|v| v.to_str().ok()),
+    );
     if ok {
         Ok(next.run(req).await)
     } else {
@@ -81,6 +95,10 @@ async fn main() -> anyhow::Result<()> {
             "none, loopback only"
         }
     );
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

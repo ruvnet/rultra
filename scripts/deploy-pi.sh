@@ -14,7 +14,7 @@ set -euo pipefail
 HOST="${1:-pi@raspberrypi}"
 cd "$(dirname "$0")/.."
 BIN=target-bookworm/aarch64-unknown-linux-gnu/release
-BINARIES="rultra rultra-sense rultra-ui"
+BINARIES="rultra rultra-sense rultra-ui rultra-spatial"
 
 echo "── building ──"
 ./scripts/build-pi.sh --features hardware $(printf -- '-p %s ' $BINARIES)
@@ -25,6 +25,9 @@ for b in $BINARIES; do
   scp -q "$BIN/$b" "$HOST:/tmp/$b"
 done
 scp -q deploy/rultra-ui.service "$HOST:/tmp/rultra-ui.service"
+scp -q deploy/desktop/rultra-console "$HOST:/tmp/rultra-console"
+scp -q deploy/desktop/rultra-console.desktop "$HOST:/tmp/rultra-console.desktop"
+scp -q deploy/desktop/rultra-console.svg "$HOST:/tmp/rultra-console.svg"
 
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -euo pipefail
@@ -34,6 +37,15 @@ done
 sudo install -m0644 /tmp/rultra-ui.service /etc/systemd/system/rultra-ui.service
 sudo mkdir -p /etc/rultra /var/lib/rultra
 
+# Desktop application: launcher, menu entry, icon.
+sudo install -m0755 /tmp/rultra-console /usr/local/bin/rultra-console
+sudo install -d /usr/local/share/applications /usr/local/share/icons/hicolor/scalable/apps
+sudo install -m0644 /tmp/rultra-console.desktop /usr/local/share/applications/rultra-console.desktop
+sudo install -m0644 /tmp/rultra-console.svg \
+  /usr/local/share/icons/hicolor/scalable/apps/rultra-console.svg
+sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
+sudo gtk-update-icon-cache -f -t /usr/local/share/icons/hicolor 2>/dev/null || true
+
 # Generate the console token on first deploy only. It is never printed and
 # never leaves the box; read it from /etc/rultra/ui.env when you need it.
 if ! sudo test -s /etc/rultra/ui.env; then
@@ -42,10 +54,18 @@ if ! sudo test -s /etc/rultra/ui.env; then
   # a control credential.
   TOK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
   ROTOK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
-  printf 'RULTRA_UI_BIND=0.0.0.0\nRULTRA_UI_PORT=17880\nRULTRA_UI_TOKEN=%s\nRULTRA_UI_READ_TOKEN=%s\n' \
+  printf 'RULTRA_UI_BIND=0.0.0.0\nRULTRA_UI_PORT=17880\nRULTRA_UI_TOKEN=%s\nRULTRA_UI_READ_TOKEN=%s\nRULTRA_UI_LOCAL_LISTEN=1\n' \
     "$TOK" "$ROTOK" | sudo tee /etc/rultra/ui.env >/dev/null
   sudo chmod 600 /etc/rultra/ui.env
   echo "generated control + read-only console tokens at /etc/rultra/ui.env (0600, not printed)"
+fi
+
+# The desktop app renders telemetry with no credential, which requires the
+# loopback read grant. Added to an existing env file rather than assumed,
+# because the grant is off by default in the binary on purpose.
+if ! sudo grep -q RULTRA_UI_LOCAL_LISTEN /etc/rultra/ui.env; then
+  printf 'RULTRA_UI_LOCAL_LISTEN=1\n' | sudo tee -a /etc/rultra/ui.env >/dev/null
+  echo "enabled the loopback read grant for the desktop app"
 fi
 
 sudo systemctl daemon-reload
@@ -59,14 +79,14 @@ sleep 3
 
 echo "── verifying ──"
 echo "  service:  $(systemctl is-active rultra-ui)"
-# The shell must be reachable and the API must NOT be, without a token. If the
-# second check ever returns 200, the box is exposed and this deploy has failed.
 SHELL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 http://127.0.0.1:17880/)
-API_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 http://127.0.0.1:17880/api/summary)
 echo "  shell:    HTTP $SHELL_CODE (want 200)"
-echo "  api/auth: HTTP $API_CODE (want 401)"
 [ "$SHELL_CODE" = "200" ] || { echo "  FAILED: console shell not served"; exit 1; }
-[ "$API_CODE" = "401" ] || { echo "  FAILED: API answered without a token"; exit 1; }
+
+# NOTE: unauthenticated *loopback* reads are allowed on purpose — that is the
+# desktop app's grant — so asserting 401 from here would contradict the design.
+# Whether the box is exposed to the NETWORK is a different question and can
+# only be answered from off the box; the deploying host checks it below.
 
 # Assert the capability split is real, not just configured. A read-only token
 # that can run a cycle is worse than no split at all, because it is trusted.
@@ -93,8 +113,29 @@ else
   exit 1
 fi
 
-for b in rultra rultra-sense; do
-  printf '  %-13s %s\n' "$b" "$(command -v $b)"
+# The desktop app must be able to read WITHOUT a token, and must still be
+# unable to write. Asserting both, because a grant that silently conveys
+# control would be worse than no grant.
+LOCAL_READ=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 http://127.0.0.1:17880/api/summary)
+LOCAL_WRITE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 -X POST http://127.0.0.1:17880/api/cycle)
+echo "  desktop:  local GET $LOCAL_READ (want 200) · local POST $LOCAL_WRITE (want 401)"
+[ "$LOCAL_READ" = "200" ]  || { echo "  FAILED: desktop app cannot read locally"; exit 1; }
+[ "$LOCAL_WRITE" = "401" ] || { echo "  FAILED: loopback grant conveys WRITE access"; exit 1; }
+
+for b in rultra rultra-sense rultra-spatial; do
+  printf '  %-15s %s\n' "$b" "$(command -v $b || echo -)"
 done
+printf '  %-15s %s\n' "desktop entry" "$(test -f /usr/local/share/applications/rultra-console.desktop && echo installed || echo MISSING)"
 REMOTE
+
+# Exposure is a property of the network, not of the box, so it is asserted from
+# here — the deploying host, which is remote to the Pi. This is the check the
+# in-box one could never make honestly once loopback reads were granted.
+REMOTE_HOST="${HOST#*@}"
+echo "── verifying from off the box ──"
+R_READ=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "http://$REMOTE_HOST:17880/api/summary" || echo 000)
+R_WRITE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X POST "http://$REMOTE_HOST:17880/api/cycle" || echo 000)
+echo "  remote:   GET $R_READ (want 401) · POST $R_WRITE (want 401)"
+[ "$R_READ" = "401" ]  || { echo "  FAILED: the network can READ without a token"; exit 1; }
+[ "$R_WRITE" = "401" ] || { echo "  FAILED: the network can WRITE without a token"; exit 1; }
 echo "── done ──"

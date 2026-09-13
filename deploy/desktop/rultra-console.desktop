@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=rultra Console
+GenericName=Sensor & Loop Manager
+Comment=Manage the box: sensors, devices, the governed loop and its witness chain
+Exec=/usr/local/bin/rultra-console
+Icon=rultra-console
+Terminal=false
+Categories=System;Settings;Monitor;HardwareSettings;
+Keywords=rultra;sensors;telemetry;matrix;lcd;loop;witness;
+StartupNotify=true
+StartupWMClass=rultra-console

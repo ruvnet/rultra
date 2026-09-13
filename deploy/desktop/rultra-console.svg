@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8a634"/>
+      <stop offset="1" stop-color="#cf8116"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#0d1117"/>
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="13.25" fill="none"
+        stroke="url(#g)" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- sonar rings: the box's own visual language -->
+  <circle cx="32" cy="32" r="20" fill="none" stroke="url(#g)" stroke-opacity="0.22" stroke-width="2"/>
+  <circle cx="32" cy="32" r="13" fill="none" stroke="url(#g)" stroke-opacity="0.45" stroke-width="2"/>
+  <circle cx="32" cy="32" r="6.5" fill="none" stroke="url(#g)" stroke-opacity="0.75" stroke-width="2"/>
+  <circle cx="32" cy="32" r="2.6" fill="url(#g)"/>
+</svg>

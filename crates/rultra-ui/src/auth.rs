@@ -101,6 +101,22 @@ pub fn required_for(method: &str, path: &str) -> Capability {
     }
 }
 
+/// Does a request from the loopback interface get read-only access without a
+/// token?
+///
+/// **Off by default, and deliberately opt-in.** The desktop app on the box
+/// needs to render telemetry without handling a credential, but enabling that
+/// silently would change the security posture of every deployment that merely
+/// upgraded. The appliance turns it on explicitly; the library never assumes it.
+///
+/// It grants `Listen` only. Control still requires the token, because "already
+/// on the box" is a reason to let someone watch, not a reason to let them drive
+/// the hardware. Peer addresses come from the accepted socket, so a remote
+/// client cannot claim to be loopback.
+pub fn local_listen_enabled(env: Option<&str>) -> bool {
+    matches!(env, Some("1") | Some("true") | Some("yes"))
+}
+
 /// Which capability the presented credential carries, if any.
 ///
 /// The control token is checked first so that a deployment which accidentally
@@ -109,6 +125,8 @@ pub fn required_for(method: &str, path: &str) -> Capability {
 pub fn capability<'a>(
     control: Option<&str>,
     read: Option<&str>,
+    peer_loopback: bool,
+    local_listen: bool,
     get: impl Fn(&str) -> Option<&'a str>,
 ) -> Option<Capability> {
     // No control token is only reachable on loopback — resolve_bind guarantees
@@ -116,14 +134,25 @@ pub fn capability<'a>(
     let Some(control) = control else {
         return Some(Capability::Control);
     };
-    let presented = presented(get)?;
-    if secret_eq(presented, control) {
-        return Some(Capability::Control);
-    }
-    if let Some(read) = read {
-        if secret_eq(presented, read) {
-            return Some(Capability::Listen);
+    // A presented credential is judged on its own merits first, so a local
+    // caller holding the control token still gets Control rather than being
+    // capped at the loopback grant.
+    if let Some(presented) = presented(get) {
+        if secret_eq(presented, control) {
+            return Some(Capability::Control);
         }
+        if let Some(read) = read {
+            if secret_eq(presented, read) {
+                return Some(Capability::Listen);
+            }
+        }
+        // A wrong token is a wrong token even from loopback: falling through to
+        // the local grant would make a bad credential indistinguishable from
+        // none, and hide a misconfigured client.
+        return None;
+    }
+    if peer_loopback && local_listen {
+        return Some(Capability::Listen);
     }
     None
 }
@@ -162,14 +191,17 @@ pub fn presented<'a>(get: impl Fn(&str) -> Option<&'a str>) -> Option<&'a str> {
 }
 
 /// Is this request allowed?
+#[allow(clippy::too_many_arguments)]
 pub fn authorized<'a>(
     control: Option<&str>,
     read: Option<&str>,
+    peer_loopback: bool,
+    local_listen: bool,
     method: &str,
     path: &str,
     get: impl Fn(&str) -> Option<&'a str>,
 ) -> bool {
-    match capability(control, read, get) {
+    match capability(control, read, peer_loopback, local_listen, get) {
         Some(held) => held >= required_for(method, path),
         None => false,
     }
@@ -178,6 +210,18 @@ pub fn authorized<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Calls `authorized` with the loopback grant OFF, which is the default and
+    /// what almost every test wants to assert against.
+    fn ok<'a>(
+        c: Option<&str>,
+        r: Option<&str>,
+        m: &str,
+        path: &str,
+        g: impl Fn(&str) -> Option<&'a str>,
+    ) -> bool {
+        authorized(c, r, false, false, m, path, g)
+    }
 
     fn none(_: &str) -> Option<&'static str> {
         None
@@ -279,45 +323,21 @@ mod tests {
 
     #[test]
     fn without_a_control_token_everything_is_allowed() {
-        assert!(authorized(None, None, "POST", "/api/cycle", none));
+        assert!(ok(None, None, "POST", "/api/cycle", none));
     }
 
     #[test]
     fn the_control_token_may_read_and_write() {
-        assert!(authorized(
-            Some("c"),
-            Some("r"),
-            "GET",
-            "/api/summary",
-            bearer("c")
-        ));
-        assert!(authorized(
-            Some("c"),
-            Some("r"),
-            "POST",
-            "/api/cycle",
-            bearer("c")
-        ));
+        assert!(ok(Some("c"), Some("r"), "GET", "/api/summary", bearer("c")));
+        assert!(ok(Some("c"), Some("r"), "POST", "/api/cycle", bearer("c")));
     }
 
     /// The point of the split: a listener can watch the box and cannot drive it.
     #[test]
     fn the_read_token_may_read_but_never_write() {
-        assert!(authorized(
-            Some("c"),
-            Some("r"),
-            "GET",
-            "/api/summary",
-            bearer("r")
-        ));
-        assert!(!authorized(
-            Some("c"),
-            Some("r"),
-            "POST",
-            "/api/cycle",
-            bearer("r")
-        ));
-        assert!(!authorized(
+        assert!(ok(Some("c"), Some("r"), "GET", "/api/summary", bearer("r")));
+        assert!(!ok(Some("c"), Some("r"), "POST", "/api/cycle", bearer("r")));
+        assert!(!ok(
             Some("c"),
             Some("r"),
             "POST",
@@ -328,20 +348,14 @@ mod tests {
 
     #[test]
     fn an_unknown_token_gets_nothing() {
-        assert!(!authorized(
+        assert!(!ok(
             Some("c"),
             Some("r"),
             "GET",
             "/api/summary",
             bearer("nope")
         ));
-        assert!(!authorized(
-            Some("c"),
-            Some("r"),
-            "POST",
-            "/api/cycle",
-            none
-        ));
+        assert!(!ok(Some("c"), Some("r"), "POST", "/api/cycle", none));
     }
 
     /// If a deployment sets both variables to the same value, the operator must
@@ -349,15 +363,128 @@ mod tests {
     #[test]
     fn identical_tokens_resolve_to_control_not_listen() {
         assert_eq!(
-            capability(Some("same"), Some("same"), bearer("same")),
+            capability(Some("same"), Some("same"), false, false, bearer("same")),
             Some(Capability::Control)
         );
     }
 
     #[test]
     fn a_malformed_authorization_header_does_not_pass() {
-        assert!(!authorized(Some("c"), None, "GET", "/api/s", |k| {
+        assert!(!ok(Some("c"), None, "GET", "/api/s", |k| {
             (k == "authorization").then_some("c")
         }));
+    }
+
+    #[test]
+    fn the_loopback_grant_is_off_unless_explicitly_enabled() {
+        assert!(!local_listen_enabled(None));
+        assert!(!local_listen_enabled(Some("0")));
+        assert!(!local_listen_enabled(Some("")));
+        assert!(local_listen_enabled(Some("1")));
+        assert!(local_listen_enabled(Some("true")));
+    }
+
+    /// The desktop app's case: a local window renders telemetry with no
+    /// credential at all.
+    #[test]
+    fn loopback_reads_without_a_token_when_enabled() {
+        assert!(authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            "GET",
+            "/api/summary",
+            none
+        ));
+    }
+
+    /// "Already on the box" is a reason to let someone watch, not to let them
+    /// drive the hardware.
+    #[test]
+    fn loopback_can_never_write_without_a_token() {
+        assert!(!authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            "POST",
+            "/api/cycle",
+            none
+        ));
+        assert!(!authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            "POST",
+            "/api/matrix",
+            none
+        ));
+    }
+
+    #[test]
+    fn a_remote_peer_gets_nothing_even_when_the_grant_is_on() {
+        assert!(!authorized(
+            Some("c"),
+            None,
+            false,
+            true,
+            "GET",
+            "/api/summary",
+            none
+        ));
+    }
+
+    #[test]
+    fn loopback_without_the_grant_still_needs_a_token() {
+        assert!(!authorized(
+            Some("c"),
+            None,
+            true,
+            false,
+            "GET",
+            "/api/summary",
+            none
+        ));
+    }
+
+    /// A local caller holding the control token keeps Control; the loopback
+    /// grant must not cap them at read-only.
+    #[test]
+    fn the_loopback_grant_never_downgrades_a_real_credential() {
+        assert_eq!(
+            capability(Some("c"), None, true, true, bearer("c")),
+            Some(Capability::Control)
+        );
+        assert!(authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            "POST",
+            "/api/cycle",
+            bearer("c")
+        ));
+    }
+
+    /// A wrong token is a wrong token even from loopback. Falling through to
+    /// the grant would make a bad credential indistinguishable from none and
+    /// hide a misconfigured client.
+    #[test]
+    fn a_wrong_token_from_loopback_is_refused_not_downgraded() {
+        assert_eq!(
+            capability(Some("c"), None, true, true, bearer("wrong")),
+            None
+        );
+        assert!(!authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            "GET",
+            "/api/s",
+            bearer("wrong")
+        ));
     }
 }
