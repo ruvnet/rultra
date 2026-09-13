@@ -5,7 +5,7 @@
 //! rultra-spatial once              print one fused state and its steering
 //! ```
 use rultra_sense::{Backend, DeviceId, Value, Verification};
-use rultra_spatial::{visual, RoomState, Steering};
+use rultra_spatial::{RoomState, Steering};
 
 fn backend() -> Box<dyn Backend> {
     #[cfg(all(target_os = "linux", feature = "hardware"))]
@@ -62,6 +62,7 @@ fn main() -> anyhow::Result<()> {
                 #[cfg(all(target_os = "linux", feature = "hardware"))]
                 {
                     use rultra_sense::backend::linux::LinuxBackend;
+                    use rultra_spatial::visual;
                     let _ = LinuxBackend::matrix_draw_with_intensity(
                         &visual::render(&room),
                         visual::intensity(&room),
