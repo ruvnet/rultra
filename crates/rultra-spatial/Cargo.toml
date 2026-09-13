@@ -1,0 +1,21 @@
+[package]
+name = "rultra-spatial"
+description = "Fuses the box's sensors into a room state, renders it as spatial-aware visuals, and emits a steering signal shaped for the Cognitum Media dispatch envelope."
+keywords = ["spatial", "sensing", "fusion", "media"]
+categories = ["embedded"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rultra-sense = { path = "../rultra-sense" }
+
+[features]
+default = []
+hardware = ["rultra-sense/hardware"]

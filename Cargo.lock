@@ -628,6 +628,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rultra-spatial"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rultra-sense",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rultra-ui"
 version = "0.1.0"
 dependencies = [

@@ -22,6 +22,8 @@ pub enum DeviceId {
     Tilt,
     /// HC-SR04 ultrasonic range finder.
     Range,
+    /// Passive piezo buzzer.
+    Buzzer,
 }
 
 /// Whether a device is an input, an output, or both.
@@ -212,6 +214,17 @@ pub const CATALOG: &[Device] = &[
                    checked against a known distance: nobody has confirmed an object is \
                    actually 4.6cm away. Needs a measurement at a ruler-known separation.",
     },
+    Device {
+        id: DeviceId::Buzzer,
+        part: "passive piezo",
+        bus: Bus::Gpio { line: 18 },
+        kind: DeviceKind::Actuator,
+        verification: Verification::Working,
+        evidence: "Confirmed audible by an observer: a 120ms pulse train on BCM GPIO18 \
+                   produced a high-frequency tone they heard and asked to be stopped. \
+                   DRIVE IT LOW WHEN DONE — a timed hold that simply expires can leave \
+                   the line floating and the buzzer sounding.",
+    },
 ];
 
 /// Look one device up in the catalog.
@@ -305,6 +318,30 @@ mod placeholder_tests {
                     d.id
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod actuator_safety_tests {
+    use super::*;
+
+    /// Devices that emit sound or motion must never be listed as sensors: a
+    /// streaming loop reads every sensor on a timer, and reading a buzzer would
+    /// mean sounding it on a timer.
+    #[test]
+    fn emitters_are_actuators_so_the_stream_never_drives_them() {
+        for id in [
+            DeviceId::Buzzer,
+            DeviceId::Matrix,
+            DeviceId::Lcd,
+            DeviceId::SegmentDisplay,
+        ] {
+            assert_eq!(
+                lookup(id).unwrap().kind,
+                DeviceKind::Actuator,
+                "{id:?} must not be readable, or the telemetry loop will drive it"
+            );
         }
     }
 }
