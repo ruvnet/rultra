@@ -211,8 +211,12 @@ pub const CATALOG: &[Device] = &[
         evidence: "Pulsing GPIO23 produces a rising edge on GPIO24, and the driver returns \
                    stable readings — 4.58cm mean, 0.62cm stdev over 8 samples, tightened \
                    from 1.82cm once trigger crosstalk was rejected. Repeatable, but NOT \
-                   checked against a known distance: nobody has confirmed an object is \
-                   actually 4.6cm away. Needs a measurement at a ruler-known separation.",
+                   checked against a known distance. FURTHER EVIDENCE AGAINST IT: over a \
+                   20s live run the reading stayed pinned at 0.02-0.08m and did not \
+                   respond to the room at all, which is what a fixed obstruction ~5cm \
+                   from the emitter looks like (case bezel or mount), not a room \
+                   measurement. Needs a physical check of what is in front of the sensor \
+                   before any distance claim.",
     },
     Device {
         id: DeviceId::Buzzer,

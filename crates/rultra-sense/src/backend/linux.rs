@@ -269,6 +269,19 @@ impl LinuxBackend {
         Ok(())
     }
 
+    /// Draw rows at a given brightness (0..=15).
+    ///
+    /// Intensity is set before the rows so the panel never flashes at the old
+    /// brightness for a frame — visible as a stutter when tracking ambient light.
+    pub fn matrix_draw_with_intensity(rows: &[u8; 8], intensity: u8) -> anyhow::Result<()> {
+        let mut spi = Self::matrix_init()?;
+        Self::word(&mut spi, max7219::INTENSITY, intensity.min(15))?;
+        for (i, b) in rows.iter().enumerate() {
+            Self::word(&mut spi, i as u8 + 1, *b)?;
+        }
+        Ok(())
+    }
+
     /// Light every LED from the chip's own oscillator, bypassing row RAM.
     /// Per the datasheet this overrides shutdown, so if display-test produces
     /// nothing the words are not reaching the chip at all.

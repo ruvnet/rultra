@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.cognitum.one/media/v0/schemas/common.schema.json",
+  "$defs": {
+    "OwnerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "owner_id"],
+      "properties": {
+        "tenant_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "owner_id": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "ServiceProfileVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "version", "enabled", "capabilities"],
+      "properties": {
+        "profile_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "version": { "type": "integer", "minimum": 1 },
+        "enabled": { "type": "boolean" },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    },
+    "Quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quote_id",
+        "owner",
+        "profile_id",
+        "profile_version",
+        "max_cost_micros",
+        "currency",
+        "expires_at_unix",
+        "digest"
+      ],
+      "properties": {
+        "quote_id": { "type": "string", "minLength": 1 },
+        "owner": { "$ref": "#/$defs/OwnerIdentity" },
+        "profile_id": { "type": "string", "minLength": 1 },
+        "profile_version": { "type": "integer", "minimum": 1 },
+        "max_cost_micros": { "type": "integer", "minimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "expires_at_unix": { "type": "integer", "minimum": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" }
+      }
+    },
+    "Authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization_id",
+        "owner",
+        "quote_digest",
+        "max_cost_micros",
+        "expires_at_unix"
+      ],
+      "properties": {
+        "authorization_id": { "type": "string", "minLength": 1 },
+        "owner": { "$ref": "#/$defs/OwnerIdentity" },
+        "quote_digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" },
+        "max_cost_micros": { "type": "integer", "minimum": 0 },
+        "expires_at_unix": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "RetentionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "retain_until_unix", "provider_delete_required"],
+      "properties": {
+        "policy_id": { "type": "string", "minLength": 1 },
+        "retain_until_unix": { "type": "integer", "minimum": 1 },
+        "provider_delete_required": { "type": "boolean" }
+      }
+    },
+    "CostReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quoted_cost_micros", "actual_cost_micros", "currency"],
+      "properties": {
+        "quoted_cost_micros": { "type": "integer", "minimum": 0 },
+        "actual_cost_micros": { "type": "integer", "minimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "provider_billable_units": { "type": ["string", "null"] }
+      }
+    },
+    "ProvenanceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_id",
+        "source_digests",
+        "output_digest",
+        "provider_id",
+        "model_id",
+        "operation_id",
+        "operation_version",
+        "rights_references"
+      ],
+      "properties": {
+        "manifest_id": { "type": "string", "minLength": 1 },
+        "source_digests": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" }
+        },
+        "output_digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "model_id": { "type": "string", "minLength": 1 },
+        "operation_id": { "type": "string", "minLength": 1 },
+        "operation_version": { "type": "integer", "minimum": 1 },
+        "rights_references": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "owner",
+        "media_type",
+        "digest",
+        "visibility",
+        "retention",
+        "cost",
+        "provenance"
+      ],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "owner": { "$ref": "#/$defs/OwnerIdentity" },
+        "media_type": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" },
+        "visibility": { "enum": ["private", "published"] },
+        "retention": { "$ref": "#/$defs/RetentionPolicy" },
+        "cost": { "$ref": "#/$defs/CostReceipt" },
+        "provenance": { "$ref": "#/$defs/ProvenanceManifest" }
+      }
+    },
+    "Job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "job_id",
+        "owner",
+        "profile_id",
+        "profile_version",
+        "idempotency_key",
+        "state",
+        "quote_digest",
+        "authorization_id",
+        "requested_deliverables",
+        "artifacts",
+        "created_at_unix",
+        "updated_at_unix"
+      ],
+      "properties": {
+        "contract_version": { "const": "0.1.0" },
+        "job_id": { "type": "string", "minLength": 1 },
+        "owner": { "$ref": "#/$defs/OwnerIdentity" },
+        "profile_id": { "type": "string", "minLength": 1 },
+        "profile_version": { "type": "integer", "minimum": 1 },
+        "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "state": {
+          "enum": [
+            "requested",
+            "policy_checked",
+            "quoted",
+            "authorized",
+            "queued",
+            "executing",
+            "review_required",
+            "approved",
+            "delivered",
+            "cancelled",
+            "denied",
+            "failed"
+          ]
+        },
+        "quote_digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" },
+        "authorization_id": { "type": "string", "minLength": 1 },
+        "requested_deliverables": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/Artifact" } },
+        "created_at_unix": { "type": "integer", "minimum": 1 },
+        "updated_at_unix": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "DeletionWorkflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deletion_id",
+        "owner",
+        "job_id",
+        "state",
+        "attempt_count",
+        "requested_at_unix",
+        "confirmed_at_unix"
+      ],
+      "properties": {
+        "deletion_id": { "type": "string", "minLength": 1 },
+        "owner": { "$ref": "#/$defs/OwnerIdentity" },
+        "job_id": { "type": "string", "minLength": 1 },
+        "state": {
+          "enum": ["pending", "provider_pending", "retryable", "tombstoned", "blocked_by_legal_hold"]
+        },
+        "attempt_count": { "type": "integer", "minimum": 0 },
+        "requested_at_unix": { "type": "integer", "minimum": 1 },
+        "confirmed_at_unix": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  }
+}

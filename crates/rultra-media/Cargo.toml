@@ -1,0 +1,23 @@
+[package]
+name = "rultra-media"
+description = "Turns rultra's spatial steering signal into contract-valid Cognitum Media job requests, validated against the upstream JSON Schemas."
+keywords = ["media", "contracts", "jsonschema", "spatial"]
+categories = ["api-bindings"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rultra-spatial = { path = "../rultra-spatial" }
+rultra-sense = { path = "../rultra-sense" }
+
+[dev-dependencies]
+# Same validator family the upstream repo uses, so conformance here means the
+# same thing it means there.
+jsonschema = "0.26"

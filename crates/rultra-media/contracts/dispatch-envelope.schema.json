@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "dispatch_id",
+    "job_id",
+    "owner",
+    "operation_id",
+    "operation_version",
+    "authorization_id",
+    "quote_digest",
+    "budget_ceiling_micros",
+    "audience",
+    "expires_at_unix"
+  ],
+  "properties": {
+    "contract_version": { "const": "0.1.0" },
+    "dispatch_id": { "type": "string", "minLength": 1 },
+    "job_id": { "type": "string", "minLength": 1 },
+    "owner": { "$ref": "common.schema.json#/$defs/OwnerIdentity" },
+    "operation_id": { "type": "string", "minLength": 1 },
+    "operation_version": { "type": "integer", "minimum": 1 },
+    "authorization_id": { "type": "string", "minLength": 1 },
+    "quote_digest": { "type": "string", "pattern": "^sha256:[A-Za-z0-9._-]+$" },
+    "budget_ceiling_micros": { "type": "integer", "minimum": 0 },
+    "audience": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "expires_at_unix": { "type": "integer", "minimum": 1 }
+  }
+}
