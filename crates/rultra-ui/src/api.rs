@@ -39,6 +39,22 @@ pub async fn summary() -> Json<J> {
 
     let temp = state::scalar(b.as_mut(), DeviceId::CpuTemp);
     let lux = state::scalar(b.as_mut(), DeviceId::Light);
+    let range_cm = state::scalar(b.as_mut(), DeviceId::Range);
+
+    // The fused band rather than raw centimetres: the range finder is
+    // Unvalidated, so a band is what it can honestly support (ADR-0006).
+    let room = rultra_spatial::RoomState::fuse(
+        range_cm.map(|cm| cm / 100.0),
+        lux,
+        device::lookup(DeviceId::Range)
+            .map(|d| d.verification)
+            .unwrap_or(Verification::Untested),
+        device::lookup(DeviceId::Light)
+            .map(|d| d.verification)
+            .unwrap_or(Verification::Untested),
+        None,
+    );
+    let steering = rultra_spatial::Steering::from(&room);
     let ceiling = rultra_evolve::policy::THERMAL_CEILING_C;
 
     // Chain depth is a liveness signal: a console that claims the loop is
@@ -58,6 +74,15 @@ pub async fn summary() -> Json<J> {
         "devices_responding": responding,
         "devices_working": working,
         "witness_entries": chain_len,
+        "proximity": room.proximity,
+        "light_band": room.light,
+        "range_cm": range_cm,
+        "steering": {
+            "intensity": steering.intensity,
+            "luminance": steering.luminance,
+            "calm": steering.calm,
+            "billable": steering.billable,
+        },
     }))
 }
 

@@ -24,7 +24,8 @@ tower-http = { version = "0.5", features = ["cors"] }
 rultra-sense = { path = "../rultra-sense" }
 rultra-evolve = { path = "../rultra-evolve" }
 rultra-witness = { path = "../rultra-witness" }
+rultra-spatial = { path = "../rultra-spatial" }
 
 [features]
 default = []
-hardware = ["rultra-sense/hardware"]
+hardware = ["rultra-sense/hardware", "rultra-spatial/hardware"]

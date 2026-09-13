@@ -1149,6 +1149,7 @@ dependencies = [
  "axum",
  "rultra-evolve",
  "rultra-sense",
+ "rultra-spatial",
  "rultra-witness",
  "serde",
  "serde_json",
