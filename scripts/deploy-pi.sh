@@ -14,7 +14,7 @@ set -euo pipefail
 HOST="${1:-pi@raspberrypi}"
 cd "$(dirname "$0")/.."
 BIN=target-bookworm/aarch64-unknown-linux-gnu/release
-BINARIES="rultra rultra-sense rultra-ui rultra-spatial"
+BINARIES="rultra rultra-sense rultra-ui rultra-spatial rultra-mcp"
 
 echo "── building ──"
 ./scripts/build-pi.sh --features hardware $(printf -- '-p %s ' $BINARIES)
@@ -31,7 +31,7 @@ scp -q deploy/desktop/rultra-console.svg "$HOST:/tmp/rultra-console.svg"
 
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -euo pipefail
-for b in rultra rultra-sense rultra-ui; do
+for b in rultra rultra-sense rultra-ui rultra-spatial rultra-mcp; do
   sudo install -m0755 "/tmp/$b" "/usr/local/bin/$b"
 done
 sudo install -m0644 /tmp/rultra-ui.service /etc/systemd/system/rultra-ui.service
@@ -122,7 +122,7 @@ echo "  desktop:  local GET $LOCAL_READ (want 200) · local POST $LOCAL_WRITE (w
 [ "$LOCAL_READ" = "200" ]  || { echo "  FAILED: desktop app cannot read locally"; exit 1; }
 [ "$LOCAL_WRITE" = "401" ] || { echo "  FAILED: loopback grant conveys WRITE access"; exit 1; }
 
-for b in rultra rultra-sense rultra-spatial; do
+for b in rultra rultra-sense rultra-spatial rultra-mcp; do
   printf '  %-15s %s\n' "$b" "$(command -v $b || echo -)"
 done
 printf '  %-15s %s\n' "desktop entry" "$(test -f /usr/local/share/applications/rultra-console.desktop && echo installed || echo MISSING)"

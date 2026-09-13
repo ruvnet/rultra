@@ -1,0 +1,31 @@
+[package]
+name = "rultra-mcp"
+description = "MCP server for the rultra box: tools and ruv:// resources for its sensors, actuators, governed loop and witness chain."
+keywords = ["mcp", "sensors", "raspberry-pi", "tools"]
+categories = ["command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rultra-mcp"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rmcp = { version = "3", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+schemars = "1"
+rultra-sense = { path = "../rultra-sense" }
+rultra-spatial = { path = "../rultra-spatial" }
+rultra-evolve = { path = "../rultra-evolve" }
+rultra-witness = { path = "../rultra-witness" }
+
+[features]
+default = []
+hardware = ["rultra-sense/hardware", "rultra-spatial/hardware"]
