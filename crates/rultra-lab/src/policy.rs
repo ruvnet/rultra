@@ -22,7 +22,7 @@
 //!   Observing is exactly what is wanted during a stop.
 
 use crate::observe::MonoNanos;
-use crate::uri::{LabUri, Plane};
+use crate::uri::LabUri;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;

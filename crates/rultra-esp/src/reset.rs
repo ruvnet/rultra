@@ -39,6 +39,11 @@ pub const RESET_HOLD_MS: u64 = 120;
 /// still valid when the chip samples it.
 pub const STRAP_SETTLE_MS: u64 = 60;
 
+// Enforced at compile time rather than in a test: sub-millisecond toggles are
+// exactly why opening and closing the port is not a reset, so a future edit
+// that shortens this should fail the build, not a test run.
+const _: () = assert!(RESET_HOLD_MS >= 50);
+
 #[cfg(all(target_os = "linux", feature = "hardware"))]
 mod imp {
     use super::*;
@@ -121,12 +126,6 @@ pub fn reset(port: &Path, mode: ResetMode) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_hold_is_long_enough_to_actually_reset() {
-        // Sub-millisecond toggles are why open/close does not work.
-        assert!(RESET_HOLD_MS >= 50, "hold too short to be a real reset");
-    }
 
     #[test]
     fn download_mode_is_distinct_from_run_mode() {
