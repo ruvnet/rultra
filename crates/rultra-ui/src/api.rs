@@ -231,7 +231,13 @@ pub async fn tools() -> Json<J> {
               // had it.
               "source_note": "ruview reports its own data source; `simulated` means it is not live radio" },
             { "id": "ruvector", "role": "vector memory, HNSW, RVF containers",
-              "present": probe("npx", &["--no-install", "@ruvector/cli", "--version"]).is_some() },
+              // Resolved through the global npm root: `npx --no-install` does
+              // not find globally installed packages, so probing that way
+              // under-reported a tool that is present. A tools page that
+              // under-reports is as wrong as one that over-reports.
+              "present": probe("npm", &["root", "-g"])
+                  .map(|root| std::path::Path::new(&root).join("@ruvector/cli").exists())
+                  .unwrap_or(false) },
             { "id": "ruflo", "role": "swarm orchestration, memory, hooks",
               "present": std::path::Path::new("/usr/local/bin/ruflo").exists() },
             { "id": "ruv-swarm", "role": "multi-agent coordination",

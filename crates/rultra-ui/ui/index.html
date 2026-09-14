@@ -131,6 +131,7 @@ body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
   padding:3px 9px;border-radius:999px;letter-spacing:.02em}
 .badge.working{background:rgba(63,185,80,.13);color:var(--ok);border:1px solid rgba(63,185,80,.3)}
+.badge.ctl{background:rgba(232,166,52,.13);color:var(--rv-gold);border:1px solid rgba(232,166,52,.3)}
 .badge.unvalidated{background:rgba(121,192,255,.13);color:#79c0ff;border:1px solid rgba(121,192,255,.3)}
 .badge.acks_but_silent{background:rgba(210,153,34,.13);color:var(--warn);border:1px solid rgba(210,153,34,.3)}
 .badge.untested{background:rgba(110,118,129,.13);color:var(--off);border:1px solid rgba(110,118,129,.3)}
@@ -209,6 +210,19 @@ body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
 .toast.ok{border-color:rgba(63,185,80,.45)}
 @keyframes toastin{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
 
+/* Screensaver. A wall-mounted console left on for hours burns a static layout
+   into an LCD and lights a dark room all night. It idles into a slow, dim
+   figure and returns on any input. */
+#saver{position:fixed;inset:0;z-index:90;background:var(--rv-bg);
+  display:grid;place-items:center;animation:fade 1.2s ease both;cursor:none}
+#saver .wrap{text-align:center;animation:drift 48s ease-in-out infinite alternate}
+@keyframes drift{from{transform:translate(-4vw,-3vh) scale(.96)}to{transform:translate(4vw,3vh) scale(1.04)}}
+#saver svg{width:min(46vmin,340px);height:auto;display:block;margin:0 auto}
+#saver .ring{animation:sweep 6s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes sweep{0%{stroke-opacity:.06}45%{stroke-opacity:.5}100%{stroke-opacity:.06}}
+#saver .meta{margin-top:26px;font-size:13px;color:var(--rv-text-3);
+  font-variant-numeric:tabular-nums;letter-spacing:.04em}
+#saver .meta b{color:var(--rv-gold);font-weight:600}
 .hint{margin-top:26px;font-size:12px;color:var(--rv-text-3);display:flex;gap:16px;flex-wrap:wrap}
 .hint kbd{font-family:ui-monospace,monospace;font-size:10.5px;background:var(--rv-surface-light);
   border:1px solid var(--rv-border);border-radius:5px;padding:2px 6px;color:var(--rv-text-2)}
@@ -335,8 +349,14 @@ function askToken(msg){
   const o=document.createElement('div'); o.className='overlay'; o.id='tokgate';
   o.innerHTML=`<div class="sheet"><h3>Console token</h3>
     <p style="color:var(--rv-text-3);font-size:13px;line-height:1.6;margin:0 0 16px">
-      ${msg||'This console can run governed cycles and drive hardware, so the API requires a token.'}
-      On the box it lives in <span class="mono">/etc/rultra/ui.env</span>.</p>
+      ${msg||'Reading needs nothing on this box. A token is required only to run cycles, drive hardware or call a model.'}</p>
+    <div style="background:var(--rv-surface-light);border:1px solid var(--rv-border);border-radius:9px;
+                padding:11px 13px;margin:0 0 15px;font-family:ui-monospace,monospace;font-size:11.5px;
+                color:var(--rv-text-2);line-height:1.6;word-break:break-all">
+      gcloud secrets versions access latest \<br>&nbsp;&nbsp;--secret=RULTRA_CONSOLE_TOKEN \<br>&nbsp;&nbsp;--project=cognitum-20260110
+    </div>
+    <p style="color:var(--rv-text-3);font-size:12px;margin:0 0 14px">
+      Or read it on the box from <span class="mono">/etc/rultra/ui.env</span>.</p>
     <input id="tokin" type="password" placeholder="token" autocomplete="off" spellcheck="false"
       style="width:100%;padding:11px 13px;border-radius:9px;background:var(--rv-surface-light);
              border:1px solid var(--rv-border-light);color:var(--rv-text);font-size:14px;
@@ -542,20 +562,22 @@ async function renderToolkit(){
   shell(`<div class="grid wide">${e.examples.map(x=>`
     <div class="card" tabindex="0" data-act="example:${x.id}">
       <div class="rowhead"><div class="label">${x.needs}</div>
-        <span class="badge untested">run</span></div>
+        <span class="badge ctl" title="needs the control token">run · control</span></div>
       <div style="font-size:16px;font-weight:600;margin:4px 0 7px">${x.title}</div>
       <div class="sub">${x.blurb}</div>
     </div>`).join('')}</div>
     <div style="margin-top:20px"></div>
     <div class="grid">
       <div class="card" tabindex="0" data-act="selftest">
-        <div class="label">Self-test</div>
+        <div class="rowhead"><div class="label">Self-test</div>
+          <span class="badge working">read-only</span></div>
         <div class="big" style="font-size:25px">check myself</div>
         <div class="sub">Six checks the box runs against itself — snapshot freshness, evidence
         discipline, that no emitter is readable, and that the chain parses.</div>
       </div>
       <div class="card" tabindex="0" data-act="interpret">
-        <div class="label">Model reading</div>
+        <div class="rowhead"><div class="label">Model reading</div>
+          <span class="badge ctl" title="needs the control token">control</span></div>
         <div class="big" style="font-size:25px">describe the room</div>
         <div class="sub">Sends only the fused facts to a model. With no key configured it says so
         rather than inventing an interpretation.</div>
@@ -622,7 +644,7 @@ async function renderTools(){
     <div style="margin-top:20px"></div>
     <div class="card" tabindex="0" data-act="claimcheck">
       <div class="rowhead"><div class="label">Self-audit</div>
-        <span class="badge untested">press enter</span></div>
+        <span class="badge working">read-only</span></div>
       <div class="big" style="font-size:25px">lint our own claims</div>
       <div class="sub">Runs <span class="mono">ruview claim-check</span> over every evidence string in this
       box's device catalog. Those strings are accuracy claims about hardware; this is someone else's
@@ -841,7 +863,8 @@ async function renderLoop(){
       ${sch.last_decision?`<div class="evi">last decision <b style="color:${sch.last_decision==='promoted'?'var(--ok)':'var(--bad)'}">${sch.last_decision.replace(/_/g,' ')}</b></div>`:''}
     </div>
     <div class="card" tabindex="0" data-act="cycle">
-      <div class="label">Run one cycle</div>
+      <div class="rowhead"><div class="label">Run one cycle</div>
+        <span class="badge ctl" title="needs the control token">control</span></div>
       <div class="big" style="font-size:27px">observe → gate</div>
       <div class="sub">Press <b>enter</b> to run a full governed cycle. Takes a few seconds — it samples twice and verifies a rollback.</div>
     </div>
@@ -1037,6 +1060,54 @@ addEventListener('keydown',e=>{
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-act]'); if(c){c.focus();act(c.dataset.act)}
 });
+page=fromHash();
+/* ── screensaver ─────────────────────────────────────────────────────── */
+const SAVER_AFTER_MS = 60*60*1000;   // one hour
+let idleTimer=null, saverOn=false;
+
+function showSaver(){
+  if(saverOn||$('#saver'))return;
+  saverOn=true;
+  const d=document.createElement('div'); d.id='saver';
+  d.innerHTML=`<div class="wrap">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      ${[52,40,28,16].map((r,i)=>`<circle cx="60" cy="60" r="${r}" fill="none"
+        stroke="var(--rv-gold)" stroke-width="1.4" class="ring"
+        style="animation-delay:${i*700}ms"/>`).join('')}
+      <circle cx="60" cy="60" r="4" fill="var(--rv-gold)" fill-opacity=".75"/>
+    </svg>
+    <div class="meta" id="saver-meta">rultra</div></div>`;
+  document.body.appendChild(d);
+
+  /* Keep showing live readings while idle — a screensaver on an instrument
+     should still be an instrument. Slowly, because nobody is reading it. */
+  const tick=async()=>{
+    if(!saverOn)return;
+    const s=await api('/api/summary');
+    const m=$('#saver-meta');
+    if(m&&!s.__offline&&!s.__unauthorized){
+      m.innerHTML=`<b>${fmt(s.die_temp_c)}</b> °C &nbsp;·&nbsp; <b>${fmt(s.lux)}</b> lux
+        &nbsp;·&nbsp; <b>${s.witness_entries}</b> signed`;
+    }
+    if(saverOn) setTimeout(tick, 30000);
+  };
+  tick();
+}
+
+function hideSaver(){
+  const d=$('#saver'); if(d)d.remove();
+  saverOn=false;
+}
+
+function resetIdle(){
+  if(saverOn) hideSaver();
+  clearTimeout(idleTimer);
+  idleTimer=setTimeout(showSaver, SAVER_AFTER_MS);
+}
+['mousemove','mousedown','keydown','wheel','touchstart'].forEach(ev=>
+  addEventListener(ev, resetIdle, {passive:true}));
+resetIdle();
+
 page=fromHash();
 renderNav(); render();
 </script>

@@ -8,3 +8,8 @@
 .claude-flow/
 .swarm/
 .hive-mind/
+
+# Never commit anything that could carry a token
+ui.env
+*.env
+!.env.example
