@@ -410,3 +410,37 @@ pub async fn lcd(Json(req): Json<LcdReq>) -> impl IntoResponse {
         )
     }
 }
+
+/// The runnable examples this box offers.
+pub async fn examples() -> Json<J> {
+    Json(json!({
+        "examples": crate::toolkit::EXAMPLES.iter().map(|e| json!({
+            "id": e.id, "title": e.title, "blurb": e.blurb, "needs": e.needs,
+        })).collect::<Vec<_>>()
+    }))
+}
+
+#[derive(serde::Deserialize)]
+pub struct RunArgs {
+    pub id: String,
+}
+
+pub async fn run_example(Json(a): Json<RunArgs>) -> Json<J> {
+    Json(crate::toolkit::run_example(&a.id).await)
+}
+
+pub async fn selftest() -> Json<J> {
+    Json(crate::toolkit::selftest().await)
+}
+
+pub async fn interpret() -> Json<J> {
+    Json(crate::toolkit::interpret().await)
+}
+
+pub async fn set_policy(
+    Json(p): Json<crate::toolkit::PolicyPatch>,
+) -> Result<Json<J>, (StatusCode, Json<J>)> {
+    crate::toolkit::set_policy(p)
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))))
+}

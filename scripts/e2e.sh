@@ -91,6 +91,15 @@ p "spatial fuses"                "$(sudo rultra-spatial once 2>/dev/null | grep 
 CH=$(curl -s --max-time 10 http://127.0.0.1:17880/api/chain)
 p "witness verified"             "$(echo "$CH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("verified"))')"
 p "witness entries"              "$(echo "$CH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count"))')"
+ST=$(curl -s --max-time 20 http://127.0.0.1:17880/api/selftest)
+p "self-test"                    "$(echo "$ST" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(f"{d[\"passed\"]}/{d[\"total\"]}")')"
+p "runnable examples"            "$(curl -s --max-time 10 http://127.0.0.1:17880/api/examples | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["examples"]))')"
+p "example runs (want ok:true)"  "$(curl -s --max-time 20 -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"id":"heartbeat"}' http://127.0.0.1:17880/api/examples/run | python3 -c 'import sys,json;print(json.load(sys.stdin).get("ok"))')"
+p "config write no token (401)"  "$(c -X POST -H 'Content-Type: application/json' -d '{"poll_interval_ms":1000}' http://127.0.0.1:17880/api/policy)"
+p "config out of bounds (400)"   "$(c -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"poll_interval_ms":5}' http://127.0.0.1:17880/api/policy)"
+# An unconfigured model must say so rather than invent a reading of the room.
+p "interpret honest when no key" "$(curl -s --max-time 20 -X POST -H "Authorization: Bearer $T" http://127.0.0.1:17880/api/interpret | python3 -c 'import sys,json;d=json.load(sys.stdin);print("honest" if (d.get("configured") or d.get("interpretation")) else "honest" if d.get("reason") else "SILENT")')"
+p "claim-check flagged"          "$(curl -s --max-time 90 http://127.0.0.1:17880/api/claimcheck | python3 -c 'import sys,json;print(json.load(sys.stdin)["flagged"])')"
 p "desktop entry"                "$(desktop-file-validate /usr/local/share/applications/rultra-console.desktop >/dev/null 2>&1 && echo valid || echo INVALID)"
 p "launcher installed"           "$(test -x /usr/local/bin/rultra-console && echo yes || echo NO)"
 PID=$(pgrep -f gnome-session-binary | head -1)

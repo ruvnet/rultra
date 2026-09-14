@@ -10,6 +10,7 @@ mod api;
 mod asset;
 mod auth;
 mod state;
+mod toolkit;
 
 use axum::{
     extract::Request,
@@ -79,6 +80,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/schedule", get(api::schedule))
         .route("/api/tools", get(api::tools))
         .route("/api/claimcheck", get(api::claimcheck))
+        .route("/api/examples", get(api::examples))
+        .route("/api/examples/run", post(api::run_example))
+        .route("/api/selftest", get(api::selftest))
+        .route("/api/interpret", post(api::interpret))
+        // A write, so it needs Control — derived from the method, not a list.
+        .route("/api/policy", post(api::set_policy))
         .route("/api/chain", get(api::chain))
         .route("/api/cycle", post(api::cycle))
         .route("/api/matrix", post(api::matrix))

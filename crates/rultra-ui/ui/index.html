@@ -249,9 +249,10 @@ const PAGES=[
  {id:'loop',     icon:'↻', title:'Loop',      key:'3', blurb:'The governed cycle: observe, propose, gate, promote or roll back. Run one and watch the decision.'},
  {id:'witness',  icon:'⛓', title:'Witness',   key:'4', blurb:'The signed, hash-chained record of every decision this box has made.'},
  {id:'hardware', icon:'▦', title:'Hardware',  key:'5', blurb:'Drive the outputs directly — the 8×8 matrix and the character LCD.'},
- {id:'tools',    icon:'⬡', title:'ruvnet',     key:'6', blurb:'The ruvnet stack on this box, probed rather than declared — and this box auditing its own accuracy claims.'},
- {id:'apps',     icon:'✦', title:'Applications',key:'7', blurb:'What this combination of sensors and tools can actually be built into, and what each one still needs.'},
- {id:'settings', icon:'⚙', title:'Settings',   key:'8', blurb:'Thresholds, bounds and security posture. Values are read from the running box, not from defaults.'},
+ {id:'toolkit',  icon:'⚗', title:'Toolkit',    key:'6', blurb:'Runnable examples, a self-test the box performs on itself, and an optional model reading of the room.'},
+ {id:'tools',    icon:'⬡', title:'ruvnet',     key:'7', blurb:'The ruvnet stack on this box, probed rather than declared — and this box auditing its own accuracy claims.'},
+ {id:'apps',     icon:'✦', title:'Applications',key:'8', blurb:'What this combination of sensors and tools can actually be built into, and what each one still needs.'},
+ {id:'settings', icon:'⚙', title:'Settings',   key:'9', blurb:'Thresholds, bounds and security posture. Values are read from the running box, not from defaults.'},
 ];
 let page='overview', timer=null, hist=[];
 const $=s=>document.querySelector(s);
@@ -433,7 +434,7 @@ function shell(body,actions=''){
     <div class="hint">
       <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move</span>
       <span><kbd>enter</kbd> activate</span>
-      <span><kbd>1</kbd>–<kbd>8</kbd> jump</span>
+      <span><kbd>1</kbd>–<kbd>9</kbd> jump</span>
       <span><kbd>backspace</kbd> back</span>
       <span><kbd>r</kbd> refresh</span>
       <span><kbd>?</kbd> keys</span>
@@ -529,9 +530,78 @@ async function render(){
   if(page==='loop')          return renderLoop();
   if(page==='witness')       return renderWitness();
   if(page==='hardware')      return renderHardware();
+  if(page==='toolkit')       return renderToolkit();
   if(page==='tools')         return renderTools();
   if(page==='apps')          return renderApps();
   if(page==='settings')      return renderSettings();
+}
+
+async function renderToolkit(){
+  const e=await api('/api/examples');
+  if(e.__unauthorized)return; if(e.__offline)return staleShell();
+  shell(`<div class="grid wide">${e.examples.map(x=>`
+    <div class="card" tabindex="0" data-act="example:${x.id}">
+      <div class="rowhead"><div class="label">${x.needs}</div>
+        <span class="badge untested">run</span></div>
+      <div style="font-size:16px;font-weight:600;margin:4px 0 7px">${x.title}</div>
+      <div class="sub">${x.blurb}</div>
+    </div>`).join('')}</div>
+    <div style="margin-top:20px"></div>
+    <div class="grid">
+      <div class="card" tabindex="0" data-act="selftest">
+        <div class="label">Self-test</div>
+        <div class="big" style="font-size:25px">check myself</div>
+        <div class="sub">Six checks the box runs against itself — snapshot freshness, evidence
+        discipline, that no emitter is readable, and that the chain parses.</div>
+      </div>
+      <div class="card" tabindex="0" data-act="interpret">
+        <div class="label">Model reading</div>
+        <div class="big" style="font-size:25px">describe the room</div>
+        <div class="sub">Sends only the fused facts to a model. With no key configured it says so
+        rather than inventing an interpretation.</div>
+      </div>
+    </div>
+    <div id="tk-out" style="margin-top:16px"></div>`);
+  focusFirst();
+}
+
+async function runExample(id){
+  const out=$('#tk-out');
+  out.innerHTML='<div class="card"><div class="label">running…</div></div>';
+  const r=await api('/api/examples/run',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({id})});
+  if(r.__unauthorized||r.__offline)return;
+  out.innerHTML=`<div class="card">
+    <div class="rowhead"><div class="label">${id}</div>
+      <span class="badge ${r.ok?'working':'acks_but_silent'}">${r.ok?'ran':'could not run'}</span></div>
+    <div class="sub mono" style="margin-top:6px">${JSON.stringify(r)}</div>
+    ${r.note?`<div class="evi">${r.note}</div>`:''}</div>`;
+  stagger(); toast(r.ok?`ran ${id}`:(r.error||'failed'), r.ok?'ok':'err');
+}
+
+async function runSelftest(){
+  const r=await api('/api/selftest');
+  if(r.__unauthorized||r.__offline)return;
+  const all=r.passed===r.total;
+  modal(`Self-test — ${r.passed}/${r.total}`,
+    `<div class="chain">${r.checks.map(c=>`<div class="centry">
+      <span class="ev ${c.ok?'promoted':'rolled_back'}" style="min-width:56px">${c.ok?'pass':'FAIL'}</span>
+      <span class="dt" style="color:var(--rv-text-2)">${c.check}</span>
+      <span class="seq">${c.got}</span></div>`).join('')}</div>
+     <div class="evi">${all?'Every check the box can make about itself passes.'
+       :'A failing check is a real defect, not a flaky test — these are all deterministic.'}</div>`);
+  toast(all?'self-test: all pass':`self-test: ${r.total-r.passed} failed`, all?'ok':'err');
+}
+
+async function runInterpret(){
+  const r=await api('/api/interpret',{method:'POST'});
+  if(r.__unauthorized||r.__offline)return;
+  modal('Model reading of the room',
+    r.configured
+      ? `<div class="sub" style="line-height:1.65">${r.interpretation||('<span style="color:var(--bad)">'+(r.error||'no completion')+'</span>')}</div>
+         <div class="evi">Facts sent: <span class="mono">${JSON.stringify(r.facts)}</span></div>`
+      : `<div class="sub" style="line-height:1.65">${r.reason}</div>
+         <div class="evi">Facts that would be sent: <span class="mono">${JSON.stringify(r.facts)}</span></div>`);
 }
 
 async function renderTools(){
@@ -585,6 +655,25 @@ async function runClaimCheck(){
   stagger(); toast(clean?'claim-check: all pass':'claim-check: '+r.flagged+' flagged', clean?'ok':'err');
 }
 
+function editPolicy(cur,min,max){
+  modal('Poll interval',
+    `<div class="sub" style="margin-bottom:12px">Milliseconds between sampling rounds, bounded to
+     ${min}–${max}. Applied directly, not through the fitness gate — the governed loop may still
+     propose changing it back, which is the system working, not fighting you.</div>
+     <input id="pollin" type="number" min="${min}" max="${max}" value="${cur}"
+       style="width:100%;padding:11px 13px;border-radius:9px;background:var(--rv-surface-light);
+              border:1px solid var(--rv-border-light);color:var(--rv-text);font-size:14px;
+              font-family:ui-monospace,monospace;outline:none">`,
+    { confirm:'Apply', closeLabel:'Cancel', onConfirm: async()=>{
+        const v=parseInt($('#pollin').value,10);
+        const r=await api('/api/policy',{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({poll_interval_ms:v})});
+        if(r.error){toast(r.error,'err');return;}
+        if(r.__unauthorized){toast('needs the control token','err');return;}
+        toast(`poll interval ${r.from} → ${r.to} ms`,'ok'); render();
+      }});
+}
+
 const APPS=[
  {n:'Ambient presence light', need:'range + matrix', have:true,
   d:'The matrix already mirrors proximity as sonar rings. Add the buzzer and it announces arrival.'},
@@ -628,7 +717,9 @@ async function renderSettings(){
       ${row('thermal comfort', fmt(p.thermal_comfort_c,0)+' °C','below this it may sample faster')}
       ${row('thermal ceiling', fmt(p.thermal_ceiling_c,0)+' °C','above this it backs off; safety scores 0')}
       ${row('policy hash', (p.content_hash||'').slice(0,20)+'…','content-addressed; the rollback target')}
-    </div></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn gold" onclick="editPolicy(${p.poll_interval_ms},${p.min_poll_ms},${p.max_poll_ms})">Change poll interval</button></div>
+    </div>
   <div style="margin-top:16px"></div>
   <div class="card"><div class="label">loop</div>
     <div class="chain">
@@ -835,6 +926,9 @@ async function act(a){
   if(a.startsWith('go:'))return go(a.slice(3));
   if(a==='cycle')return runCycle();
   if(a==='claimcheck')return runClaimCheck();
+  if(a==='selftest')return runSelftest();
+  if(a==='interpret')return runInterpret();
+  if(a.startsWith('example:'))return runExample(a.slice(8));
   if(a.startsWith('matrix:')){
     const pattern=a.split(':')[1];
     let text;
@@ -875,13 +969,37 @@ function move(d){
   if(d==='down')j=i+n;  if(d==='up')j=i-n;
   if(j>=0&&j<c.length)c[j].focus();
 }
+/* One modal implementation for confirmations, forms and results. Each ad-hoc
+   overlay is another place to get focus handling and dismissal subtly wrong. */
+function modal(title, bodyHtml, opts){
+  opts=opts||{};
+  document.querySelectorAll('.overlay').forEach(o=>o.remove());
+  const o=document.createElement('div'); o.className='overlay';
+  o.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="${title}">
+    <h3>${title}</h3><div id="modal-body">${bodyHtml}</div>
+    <div style="display:flex;gap:9px;margin-top:16px;justify-content:flex-end">
+      <button class="btn" data-close>${opts.closeLabel||'Close'}</button>
+      ${opts.confirm?`<button class="btn gold" data-confirm>${opts.confirm}</button>`:''}
+    </div></div>`;
+  const close=()=>{o.remove();document.removeEventListener('keydown',esc,true);};
+  const esc=(e)=>{ if(e.key==='Escape'){e.stopPropagation();close();} };
+  document.addEventListener('keydown',esc,true);
+  o.addEventListener('click',e=>{ if(e.target===o) close(); });
+  document.body.appendChild(o);
+  o.querySelector('[data-close]').onclick=close;
+  const c=o.querySelector('[data-confirm]');
+  if(c) c.onclick=async()=>{ await opts.onConfirm?.(o); close(); };
+  (o.querySelector('input,button[data-confirm]')||o.querySelector('[data-close]')).focus();
+  return {close, el:o};
+}
+
 function help(){
   if($('.overlay'))return;
   const o=document.createElement('div'); o.className='overlay';
   o.innerHTML=`<div class="sheet"><h3>Keyboard</h3><div class="keys">
     <kbd>← → ↑ ↓</kbd><span>Move between cards (grid-aware)</span>
     <kbd>enter / space</kbd><span>Activate the focused card</span>
-    <kbd>1 – 8</kbd><span>Jump straight to a section</span>
+    <kbd>1 – 9</kbd><span>Jump straight to a section</span>
     <kbd>j / k</kbd><span>Next / previous section</span>
     <kbd>backspace</kbd><span>Back to the previous section</span>
     <kbd>r</kbd><span>Refresh this page</span>
