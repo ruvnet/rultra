@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
                     Verification::Unvalidated => "uncal",
                     Verification::AcksButSilent => "acks",
                     Verification::Untested => "??  ",
+                    Verification::Faulty => "BAD ",
                 };
                 println!(
                     "{mark} {:<16} {:<22} {}",

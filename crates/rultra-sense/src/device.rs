@@ -101,6 +101,13 @@ pub enum Verification {
     AcksButSilent,
     /// Documented on the board, never yet exercised here.
     Untested,
+    /// Exercised, and shown to be wrong. Ranks below `Untested` on purpose:
+    /// untested means unknown, faulty means known bad, and a reader deciding
+    /// what to trust needs those kept apart.
+    ///
+    /// The distinction matters most for a device that is *stable* while being
+    /// wrong, because stability is the property people mistake for correctness.
+    Faulty,
 }
 
 /// A documented device.
@@ -207,16 +214,22 @@ pub const CATALOG: &[Device] = &[
             echo: 24,
         },
         kind: DeviceKind::Sensor,
-        verification: Verification::Unvalidated,
-        evidence: "Pulsing GPIO23 produces a rising edge on GPIO24, and the driver returns \
-                   stable readings — 4.58cm mean, 0.62cm stdev over 8 samples, tightened \
-                   from 1.82cm once trigger crosstalk was rejected. Repeatable, but NOT \
-                   checked against a known distance. FURTHER EVIDENCE AGAINST IT: over a \
-                   20s live run the reading stayed pinned at 0.02-0.08m and did not \
-                   respond to the room at all, which is what a fixed obstruction ~5cm \
-                   from the emitter looks like (case bezel or mount), not a room \
-                   measurement. Needs a physical check of what is in front of the sensor \
-                   before any distance claim.",
+        verification: Verification::Faulty,
+        evidence: "ECHO (GPIO24) IS FLOATING — the reading is noise, not distance. \
+                   Measured with gpiomon: 29,815 edges in 40s (~745 Hz) continuously, \
+                   and 3,736 in a 5s window whose inter-arrival gaps spread across every \
+                   timescale (420 under 0.1ms, 1425 at 0.1-1ms, 1699 at 1-10ms, only 191 \
+                   over 10ms). A real HC-SR04 driven by the 1Hz poller emits ONE pulse \
+                   per trigger with ~1s of silence between, so unstructured chatter at \
+                   every scale is a line nothing is driving. That also explains the \
+                   4.58cm mean that looked so trustworthy: 4.66cm is a 272us pulse \
+                   (2 x 0.0466 / 343), the driver catches the first noise edge just past \
+                   its 100us crosstalk guard, and the median-of-5 latches the same noise \
+                   floor five times. Repeatability came from the noise being stationary, \
+                   not from the sensor working. Same signature as a floating UART RX pin \
+                   (see rultra_esp::LineState::Floating). Fix the wiring or power to the \
+                   HC-SR04 before this can claim anything; the earlier 'fixed obstruction \
+                   ~5cm from the emitter' theory is superseded and was wrong.",
     },
     Device {
         id: DeviceId::Buzzer,
@@ -261,6 +274,47 @@ mod tests {
     fn unvalidated_is_ranked_below_working() {
         assert!(Verification::Working < Verification::Unvalidated);
         assert!(Verification::Unvalidated < Verification::AcksButSilent);
+    }
+
+    /// Known-bad must rank below never-tried. Ordering them the other way
+    /// would let a device we have *disproved* outrank one we simply have not
+    /// reached yet.
+    #[test]
+    fn faulty_ranks_below_untested_because_known_bad_beats_unknown() {
+        assert!(Verification::Untested < Verification::Faulty);
+        assert!(Verification::Working < Verification::Faulty);
+    }
+
+    /// A fault claim is an assertion about the world just as much as a Working
+    /// claim is, so it carries the same evidence burden.
+    #[test]
+    fn faulty_devices_cite_the_measurement_that_condemned_them() {
+        for d in CATALOG
+            .iter()
+            .filter(|d| d.verification == Verification::Faulty)
+        {
+            assert!(
+                d.evidence.len() > 20,
+                "{:?} claims Faulty without substantive evidence",
+                d.id
+            );
+        }
+    }
+
+    /// The specific regression this guards: the range finder returned a
+    /// stable 4.58cm for an entire session and was read as trustworthy
+    /// because it was repeatable. Stability is not correctness.
+    #[test]
+    fn the_range_finder_is_not_counted_among_working_devices() {
+        let range = lookup(DeviceId::Range).expect("range is catalogued");
+        assert_eq!(range.verification, Verification::Faulty);
+        assert!(
+            !CATALOG
+                .iter()
+                .filter(|d| d.verification == Verification::Working)
+                .any(|d| d.id == DeviceId::Range),
+            "a sensor measuring a floating pin must never be reported as working"
+        );
     }
 
     /// A `Working` claim is the only one that may be read as "this works", so

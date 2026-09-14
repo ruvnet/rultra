@@ -44,6 +44,7 @@ fn verification_str(v: Verification) -> &'static str {
         Verification::Unvalidated => "unvalidated",
         Verification::AcksButSilent => "acks_but_silent",
         Verification::Untested => "untested",
+        Verification::Faulty => "faulty",
     }
 }
 
