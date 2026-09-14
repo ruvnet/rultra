@@ -111,6 +111,18 @@ pub struct RoomState {
     pub verification: Verification,
 }
 
+/// Drop a reading whose sensor is known bad, keeping every other grade.
+///
+/// Exposed so callers that publish raw scalars alongside the fused state can
+/// apply the identical rule, rather than each deciding separately what a
+/// condemned sensor is worth.
+pub fn usable(value: Option<f64>, verification: Verification) -> Option<f64> {
+    match verification {
+        Verification::Faulty => None,
+        _ => value,
+    }
+}
+
 impl RoomState {
     /// Fuse one observation. `previous` is used only for stillness.
     pub fn fuse(
@@ -120,6 +132,16 @@ impl RoomState {
         light_verification: Verification,
         previous: Option<&RoomState>,
     ) -> Self {
+        // A reading from a Faulty sensor is discarded outright, not carried
+        // forward with a warning label attached. `Unvalidated` means nobody
+        // has checked it and it may well be right, so it still contributes;
+        // `Faulty` means it has been checked and disproved, and propagating a
+        // disproved number just moves the falsehood downstream where the
+        // provenance is thinner. The range finder reached here reporting a
+        // stable "close" derived entirely from a floating pin.
+        let range_m = usable(range_m, range_verification);
+        let lux = usable(lux, light_verification);
+
         let proximity = range_m
             .map(Proximity::from_metres)
             .unwrap_or(Proximity::Empty);
@@ -327,5 +349,71 @@ mod tests {
         let s = Steering::from(&state(Some(9.0), Some(0.0), None));
         assert_eq!(s.intensity, 0.0);
         assert_eq!(s.luminance, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod faulty_tests {
+    use super::*;
+
+    #[test]
+    fn a_faulty_sensor_contributes_nothing_to_the_fused_state() {
+        // The live regression: the range finder reported a stable "close"
+        // derived entirely from a floating GPIO24.
+        let r = RoomState::fuse(
+            Some(0.047),
+            Some(176.0),
+            Verification::Faulty,
+            Verification::Working,
+            None,
+        );
+        assert_eq!(
+            r.proximity,
+            Proximity::Empty,
+            "a floating pin is not proximity"
+        );
+        assert_eq!(r.range_m, None, "the condemned reading must not survive");
+        assert_eq!(
+            r.light,
+            Light::from_lux(176.0),
+            "the good sensor still counts"
+        );
+    }
+
+    #[test]
+    fn an_unvalidated_sensor_still_contributes_because_it_may_be_right() {
+        // Faulty and Unvalidated must not collapse into each other: nobody has
+        // checked an unvalidated reading, which is not the same as having
+        // checked it and found it wrong.
+        let r = RoomState::fuse(
+            Some(1.5),
+            None,
+            Verification::Unvalidated,
+            Verification::Untested,
+            None,
+        );
+        assert_eq!(r.range_m, Some(1.5));
+        assert_ne!(r.proximity, Proximity::Empty);
+    }
+
+    #[test]
+    fn a_state_built_only_from_faulty_sensors_is_never_worth_spending_on() {
+        let r = RoomState::fuse(
+            Some(0.047),
+            None,
+            Verification::Faulty,
+            Verification::Untested,
+            None,
+        );
+        assert!(!r.fit_to_spend_on());
+    }
+
+    #[test]
+    fn usable_keeps_every_grade_except_faulty() {
+        assert_eq!(usable(Some(1.0), Verification::Working), Some(1.0));
+        assert_eq!(usable(Some(1.0), Verification::Unvalidated), Some(1.0));
+        assert_eq!(usable(Some(1.0), Verification::AcksButSilent), Some(1.0));
+        assert_eq!(usable(Some(1.0), Verification::Untested), Some(1.0));
+        assert_eq!(usable(Some(1.0), Verification::Faulty), None);
     }
 }

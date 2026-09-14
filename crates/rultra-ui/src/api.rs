@@ -58,20 +58,27 @@ pub async fn summary() -> Json<J> {
     let responding = snap.presence.iter().filter(|p| p.responding).count();
     let temp = state::snap_scalar(&snap, DeviceId::CpuTemp);
     let lux = state::snap_scalar(&snap, DeviceId::Light);
-    let range_cm = state::snap_scalar(&snap, DeviceId::Range);
+    // Same rule the fusion applies: a condemned sensor publishes nothing.
+    let range_verification = device::lookup(DeviceId::Range)
+        .map(|d| d.verification)
+        .unwrap_or(Verification::Untested);
+    let range_cm = rultra_spatial::usable(
+        state::snap_scalar(&snap, DeviceId::Range),
+        range_verification,
+    );
     let working = device::CATALOG
         .iter()
         .filter(|d| d.verification == Verification::Working)
         .count();
 
-    // The fused band rather than raw centimetres: the range finder is
-    // Unvalidated, so a band is what it can honestly support (ADR-0006).
+    // The fused band rather than raw centimetres: a band is what an
+    // uncalibrated range finder can honestly support (ADR-0006). The range
+    // finder is currently Faulty, so it contributes nothing at all and
+    // proximity falls back to Empty rather than reporting a floating pin.
     let room = rultra_spatial::RoomState::fuse(
         range_cm.map(|cm| cm / 100.0),
         lux,
-        device::lookup(DeviceId::Range)
-            .map(|d| d.verification)
-            .unwrap_or(Verification::Untested),
+        range_verification,
         device::lookup(DeviceId::Light)
             .map(|d| d.verification)
             .unwrap_or(Verification::Untested),
