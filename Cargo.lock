@@ -1317,6 +1317,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rultra-esp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rultra-evolve"
 version = "0.1.0"
 dependencies = [

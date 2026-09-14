@@ -1,0 +1,25 @@
+[package]
+name = "rultra-esp"
+description = "ESP32 fleet management for the rultra box: board discovery with stable identity, hardware reset over the modem control lines, and flash operations that cannot run without a backup first."
+keywords = ["esp32", "embedded", "serial", "flashing", "raspberry-pi"]
+categories = ["embedded", "hardware-support"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[features]
+# Same posture as rultra-sense: the default build has no hardware access so
+# `cargo test` runs on x86 CI with no /dev/ttyUSB0. Real serial I/O is opt-in.
+default = []
+hardware = ["dep:libc"]
