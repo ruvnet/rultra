@@ -94,9 +94,15 @@ impl Intent {
     /// Decide from a room state.
     pub fn from_room(room: &RoomState) -> Self {
         match (room.proximity, room.light) {
-            (Proximity::Empty, Light::Dark) => Intent::Dormant,
-            (Proximity::Empty, _) => Intent::Ambient,
-            (Proximity::Close | Proximity::Near, _) if room.stillness < 1.0 => Intent::Active,
+            // No usable range sensor is no evidence of presence, so it must
+            // never reach Active — that is the branch that asks a provider for
+            // video as well as audio. Falling back to the light term alone is
+            // the conservative reading, not the neutral one.
+            (None, Light::Dark) => Intent::Dormant,
+            (None, _) => Intent::Ambient,
+            (Some(Proximity::Empty), Light::Dark) => Intent::Dormant,
+            (Some(Proximity::Empty), _) => Intent::Ambient,
+            (Some(Proximity::Close | Proximity::Near), _) if room.stillness < 1.0 => Intent::Active,
             _ => Intent::Ambient,
         }
     }
@@ -231,7 +237,7 @@ mod tests {
 
     fn room(p: Proximity, l: Light, still: f64, v: Verification) -> RoomState {
         RoomState {
-            proximity: p,
+            proximity: Some(p),
             light: l,
             range_m: None,
             lux: None,

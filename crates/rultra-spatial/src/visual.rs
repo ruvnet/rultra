@@ -9,10 +9,13 @@ use crate::{Light, Proximity, RoomState};
 /// The eight row bytes for a room state. Bit 7 is the leftmost column.
 pub fn render(room: &RoomState) -> [u8; 8] {
     match room.proximity {
-        Proximity::Empty => ring(0),
-        Proximity::Far => ring(1),
-        Proximity::Near => ring(2),
-        Proximity::Close => ring(3),
+        // Blank, not ring(0). A centre dot is what an empty room looks like,
+        // and a dead sensor must not be able to draw it.
+        None => [0u8; 8],
+        Some(Proximity::Empty) => ring(0),
+        Some(Proximity::Far) => ring(1),
+        Some(Proximity::Near) => ring(2),
+        Some(Proximity::Close) => ring(3),
     }
 }
 
@@ -56,7 +59,7 @@ mod tests {
 
     fn room(p: Proximity, l: Light) -> RoomState {
         RoomState {
-            proximity: p,
+            proximity: Some(p),
             light: l,
             range_m: None,
             lux: None,

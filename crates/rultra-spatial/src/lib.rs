@@ -91,8 +91,11 @@ impl Light {
 /// The fused state of the room.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoomState {
-    /// Nearest reflector, banded.
-    pub proximity: Proximity,
+    /// Nearest reflector, banded. `None` means no usable range sensor, which
+    /// is NOT the same as `Some(Empty)` — that would be a measurement saying
+    /// the room is clear. Absence of data must not read as evidence of
+    /// absence.
+    pub proximity: Option<Proximity>,
     /// Ambient light, banded.
     pub light: Light,
     /// Raw range in metres, when the sensor answered.
@@ -142,9 +145,7 @@ impl RoomState {
         let range_m = usable(range_m, range_verification);
         let lux = usable(lux, light_verification);
 
-        let proximity = range_m
-            .map(Proximity::from_metres)
-            .unwrap_or(Proximity::Empty);
+        let proximity = range_m.map(Proximity::from_metres);
         let light = lux.map(Light::from_lux).unwrap_or(Light::Dark);
 
         // Stillness compares bands, not raw values: raw sensor noise is not
@@ -185,7 +186,11 @@ impl RoomState {
     /// `Working` only. Paying a provider to react to an unvalidated sensor is
     /// spending real money on a number nobody has checked.
     pub fn fit_to_spend_on(&self) -> bool {
-        self.verification == Verification::Working
+        // Working sensors AND an actual proximity reading. Without the range
+        // term the steering signal still carries an `intensity` of 0.0, but
+        // that 0.0 is fabricated rather than measured, and paying a provider
+        // to react to a fabricated dimension is the thing this guards.
+        self.verification == Verification::Working && self.proximity.is_some()
     }
 }
 
@@ -211,11 +216,14 @@ pub struct Steering {
 impl From<&RoomState> for Steering {
     fn from(r: &RoomState) -> Self {
         Steering {
+            // An unknown proximity contributes 0.0 the same as an empty room,
+            // but `billable` below is what stops that fabricated 0.0 from
+            // being spent against.
             intensity: match r.proximity {
-                Proximity::Empty => 0.0,
-                Proximity::Far => 0.35,
-                Proximity::Near => 0.7,
-                Proximity::Close => 1.0,
+                None | Some(Proximity::Empty) => 0.0,
+                Some(Proximity::Far) => 0.35,
+                Some(Proximity::Near) => 0.7,
+                Some(Proximity::Close) => 1.0,
             },
             luminance: match r.light {
                 Light::Dark => 0.0,
@@ -368,9 +376,8 @@ mod faulty_tests {
             None,
         );
         assert_eq!(
-            r.proximity,
-            Proximity::Empty,
-            "a floating pin is not proximity"
+            r.proximity, None,
+            "a floating pin must read as no-data, never as an empty room"
         );
         assert_eq!(r.range_m, None, "the condemned reading must not survive");
         assert_eq!(
@@ -393,7 +400,7 @@ mod faulty_tests {
             None,
         );
         assert_eq!(r.range_m, Some(1.5));
-        assert_ne!(r.proximity, Proximity::Empty);
+        assert_eq!(r.proximity, Some(Proximity::Far));
     }
 
     #[test]
@@ -415,5 +422,64 @@ mod faulty_tests {
         assert_eq!(usable(Some(1.0), Verification::AcksButSilent), Some(1.0));
         assert_eq!(usable(Some(1.0), Verification::Untested), Some(1.0));
         assert_eq!(usable(Some(1.0), Verification::Faulty), None);
+    }
+}
+
+#[cfg(test)]
+mod unknown_proximity_tests {
+    use super::*;
+
+    /// The regression this exists for: once the faulty range reading was
+    /// dropped, the fused state became light-only and therefore `Working`,
+    /// which flipped `billable` to true. Nothing had improved — a term simply
+    /// went missing, and the steering signal kept reporting intensity 0.0 as
+    /// though it had been measured.
+    #[test]
+    fn a_missing_proximity_term_is_not_billable() {
+        let r = RoomState::fuse(
+            None,
+            Some(187.5),
+            Verification::Faulty,
+            Verification::Working,
+            None,
+        );
+        assert_eq!(
+            r.verification,
+            Verification::Working,
+            "light alone is sound"
+        );
+        assert_eq!(r.proximity, None);
+        assert!(
+            !r.fit_to_spend_on(),
+            "intensity would be a fabricated 0.0, not a measured one"
+        );
+        assert!(!Steering::from(&r).billable);
+    }
+
+    /// A dead sensor must not be able to draw the figure that means
+    /// "the room is clear".
+    #[test]
+    fn an_unknown_room_renders_blank_not_the_empty_glyph() {
+        let unknown = RoomState::fuse(
+            None,
+            None,
+            Verification::Faulty,
+            Verification::Untested,
+            None,
+        );
+        let empty = RoomState::fuse(
+            Some(9.0),
+            None,
+            Verification::Working,
+            Verification::Untested,
+            None,
+        );
+        assert_eq!(empty.proximity, Some(Proximity::Empty));
+        assert_ne!(
+            visual::render(&unknown),
+            visual::render(&empty),
+            "no-data and empty-room must be visually distinguishable"
+        );
+        assert_eq!(visual::render(&unknown), [0u8; 8]);
     }
 }
