@@ -1,0 +1,16 @@
+[package]
+name = "rultra-lab"
+description = "The ruv://lab capability namespace and synchronized observation schema: one addressable fabric over every sensor and actuator on the box, with clock skew made explicit and actuators default-denied."
+keywords = ["sensors", "capability", "iot", "sensor-fusion", "raspberry-pi"]
+categories = ["embedded", "hardware-support"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

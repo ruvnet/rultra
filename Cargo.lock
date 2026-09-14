@@ -1351,6 +1351,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rultra-lab"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rultra-mcp"
 version = "0.1.0"
 dependencies = [
