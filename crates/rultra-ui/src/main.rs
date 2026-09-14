@@ -77,6 +77,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/telemetry", get(api::telemetry))
         .route("/api/policy", get(api::policy))
         .route("/api/schedule", get(api::schedule))
+        .route("/api/tools", get(api::tools))
+        .route("/api/claimcheck", get(api::claimcheck))
         .route("/api/chain", get(api::chain))
         .route("/api/cycle", post(api::cycle))
         .route("/api/matrix", post(api::matrix))
@@ -85,6 +87,11 @@ async fn main() -> anyhow::Result<()> {
         // Same-origin only. The console is served from this process, so a
         // permissive policy would only widen what a hostile page can reach.
         .layer(CorsLayer::very_permissive().allow_credentials(false));
+
+    // Sample in the background so every request is served from memory and the
+    // physical load is a constant, not a function of how many people are
+    // watching.
+    state::spawn_refresher();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!(

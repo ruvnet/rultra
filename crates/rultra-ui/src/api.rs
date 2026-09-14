@@ -28,18 +28,19 @@ fn verification_str(v: Verification) -> &'static str {
 
 /// Headline numbers for the overview.
 pub async fn summary() -> Json<J> {
-    let mut b = state::backend();
     let policy = state::applier().load();
-    let presence = b.probe().unwrap_or_default();
-    let responding = presence.iter().filter(|p| p.responding).count();
+    // One trip to the sensors for everything this endpoint needs, rather than
+    // four separate locks and four chances to interleave with another request.
+    // From the snapshot: no lock on the bus, no waiting on physics.
+    let snap = state::latest();
+    let responding = snap.presence.iter().filter(|p| p.responding).count();
+    let temp = state::snap_scalar(&snap, DeviceId::CpuTemp);
+    let lux = state::snap_scalar(&snap, DeviceId::Light);
+    let range_cm = state::snap_scalar(&snap, DeviceId::Range);
     let working = device::CATALOG
         .iter()
         .filter(|d| d.verification == Verification::Working)
         .count();
-
-    let temp = state::scalar(b.as_mut(), DeviceId::CpuTemp);
-    let lux = state::scalar(b.as_mut(), DeviceId::Light);
-    let range_cm = state::scalar(b.as_mut(), DeviceId::Range);
 
     // The fused band rather than raw centimetres: the range finder is
     // Unvalidated, so a band is what it can honestly support (ADR-0006).
@@ -74,6 +75,7 @@ pub async fn summary() -> Json<J> {
         "devices_responding": responding,
         "devices_working": working,
         "witness_entries": chain_len,
+        "swept_at": snap.swept_at,
         "proximity": room.proximity,
         "light_band": room.light,
         "range_cm": range_cm,
@@ -88,8 +90,7 @@ pub async fn summary() -> Json<J> {
 
 /// The catalog joined with a live probe.
 pub async fn devices() -> Json<J> {
-    let mut b = state::backend();
-    let presence = b.probe().unwrap_or_default();
+    let presence = state::latest().presence;
     let items: Vec<J> = device::CATALOG
         .iter()
         .map(|d| {
@@ -113,20 +114,25 @@ pub async fn devices() -> Json<J> {
 /// more elegant but a poll survives a reconnect without extra machinery, which
 /// matters more on a box that may be power-cycled.
 pub async fn telemetry() -> Json<J> {
-    let mut b = state::backend();
-    let readings: Vec<J> = device::CATALOG
-        .iter()
-        .filter(|d| d.kind == DeviceKind::Sensor)
-        .filter_map(|d| {
-            let r = b.read(d.id).ok()?;
-            Some(json!({
-                "id": format!("{:?}", d.id).to_lowercase(),
-                "value": r.value,
-                "at": r.at,
-                "verification": verification_str(r.verification),
-            }))
-        })
-        .collect();
+    let snap = state::latest();
+    let readings: Vec<J> = {
+        device::CATALOG
+            .iter()
+            .filter(|d| d.kind == DeviceKind::Sensor)
+            .filter_map(|d| {
+                let r = snap.readings.get(&d.id)?.clone();
+                Some(json!({
+                    "id": format!("{:?}", d.id).to_lowercase(),
+                    "value": r.value,
+                    // The measurement time, which may predate this response
+                    // when the reading came from cache. Compare it to `at`
+                    // below to see the true age.
+                    "at": r.at,
+                    "verification": verification_str(r.verification),
+                }))
+            })
+            .collect()
+    };
     Json(json!({ "readings": readings, "at": rultra_sense::now() }))
 }
 
@@ -191,6 +197,82 @@ pub async fn schedule() -> Json<J> {
         "last_decision": last_decision,
         "last_gate_reason": last_reason,
     }))
+}
+
+/// Which ruvnet tools are on this box, and what they report.
+///
+/// Probed, never declared. A tools page that lists what was *installed* drifts
+/// the moment something is removed or stops; this asks each one.
+pub async fn tools() -> Json<J> {
+    let probe = |bin: &str, args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new(bin).args(args).output().ok()?;
+        let t = String::from_utf8_lossy(&out.stdout);
+        t.lines()
+            .next()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+    };
+    // ruview's sensing server, which is the interesting one: it is a real
+    // running service with its own honesty posture.
+    let ruview_health = std::process::Command::new("curl")
+        .args(["-s", "--max-time", "3", "http://127.0.0.1:3000/health"])
+        .output()
+        .ok()
+        .and_then(|o| serde_json::from_slice::<J>(&o.stdout).ok());
+
+    Json(json!({
+        "tools": [
+            { "id": "ruview", "role": "WiFi-DensePose sensing server and the claim-check honesty guardrail",
+              "present": std::path::Path::new("/usr/bin/ruview").exists(),
+              "endpoint": "http://127.0.0.1:3000",
+              "health": ruview_health,
+              // Surfaced deliberately: ruview labels its own data source, and
+              // a consumer that hides that label is worse than one that never
+              // had it.
+              "source_note": "ruview reports its own data source; `simulated` means it is not live radio" },
+            { "id": "ruvector", "role": "vector memory, HNSW, RVF containers",
+              "present": probe("npx", &["--no-install", "@ruvector/cli", "--version"]).is_some() },
+            { "id": "ruflo", "role": "swarm orchestration, memory, hooks",
+              "present": std::path::Path::new("/usr/local/bin/ruflo").exists() },
+            { "id": "ruv-swarm", "role": "multi-agent coordination",
+              "present": std::path::Path::new("/usr/bin/ruv-swarm").exists() },
+            { "id": "agentdb", "role": "agent memory with vector embeddings",
+              "present": std::path::Path::new("/usr/bin/agentdb").exists() },
+            { "id": "rultra-mcp", "role": "this box's sensors as MCP tools and ruv:// resources",
+              "present": std::path::Path::new("/usr/local/bin/rultra-mcp").exists() },
+        ]
+    }))
+}
+
+/// Lint this box's own accuracy claims with `ruview claim-check`.
+///
+/// The device catalog's evidence strings are accuracy claims about hardware,
+/// and this project has spent its whole life insisting those be honest. Running
+/// someone else's linter over them is the only way to find out whether that
+/// discipline actually holds, rather than whether it *feels* like it holds.
+pub async fn claimcheck() -> Json<J> {
+    let mut results = Vec::new();
+    let mut failed = 0usize;
+    for d in device::CATALOG {
+        let out = std::process::Command::new("ruview")
+            .args(["claim-check", "--text", d.evidence])
+            .output();
+        let verdict = match out {
+            Ok(o) => serde_json::from_slice::<J>(&o.stdout).unwrap_or_else(
+                |_| json!({ "ok": null, "summary": "claim-check produced no JSON" }),
+            ),
+            Err(e) => json!({ "ok": null, "summary": format!("ruview unavailable: {e}") }),
+        };
+        if verdict.get("ok") == Some(&J::Bool(false)) {
+            failed += 1;
+        }
+        results.push(json!({
+            "device": format!("{:?}", d.id).to_lowercase(),
+            "verification": verification_str(d.verification),
+            "verdict": verdict,
+        }));
+    }
+    Json(json!({ "checked": results.len(), "flagged": failed, "results": results }))
 }
 
 pub async fn policy() -> Json<J> {

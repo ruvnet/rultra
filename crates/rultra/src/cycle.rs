@@ -62,6 +62,12 @@ fn signing_key() -> anyhow::Result<SigningKey> {
     Ok(SigningKey::from_bytes(&seed))
 }
 
+/// The cycle deliberately uses an UNCACHED backend.
+///
+/// A measurement window has to sample the world; sampling a cache would make
+/// the parent and child observations partly the same readings, and a comparison
+/// against yourself always looks stable. The console caches because it is
+/// displaying; this is measuring, and those want opposite things.
 fn backend() -> Box<dyn Backend> {
     #[cfg(all(target_os = "linux", feature = "hardware"))]
     {

@@ -24,6 +24,8 @@ body{
 /* ambient gold wash, very subtle — the ruOS look */
 body::before{
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  /* Promoted to its own layer so scrolling the main column never repaints it. */
+  will-change:transform; transform:translateZ(0);
   background:radial-gradient(1100px 620px at 78% -8%, rgba(232,166,52,.07), transparent 62%);
 }
 ::-webkit-scrollbar{width:7px;height:7px}
@@ -36,7 +38,7 @@ body::before{
 /* ── sidebar ─────────────────────────────────────────── */
 .sidebar{
   width:var(--sidebar); flex:0 0 var(--sidebar); border-right:1px solid var(--rv-border);
-  background:rgba(255,255,255,.015); backdrop-filter:blur(12px);
+  background:rgba(255,255,255,.018);
   display:flex; flex-direction:column; padding:22px 14px;
 }
 .brand{display:flex;align-items:center;gap:11px;padding:0 10px 22px;}
@@ -104,8 +106,11 @@ body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
 .grid{display:grid;gap:15px;grid-template-columns:repeat(auto-fill,minmax(268px,1fr))}
 .grid.wide{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
 .card{
-  position:relative;border:1px solid var(--rv-border);background:var(--rv-surface);
-  backdrop-filter:blur(8px);border-radius:15px;padding:19px;
+  /* No backdrop-filter. Blur is per-frame compositor work on every card, and
+     on a Pi that dominates the frame budget for a visual effect nobody can
+     name. A slightly more opaque surface reads the same against this ground. */
+  position:relative;border:1px solid var(--rv-border);background:rgba(255,255,255,.038);
+  border-radius:15px;padding:19px;
   transition:border-color .3s ease, box-shadow .3s ease, transform .18s ease;
   animation:rise .42s cubic-bezier(.21,1,.32,1) backwards;
 }
@@ -179,7 +184,7 @@ body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
 .ev.gated{color:var(--warn)} .ev.promoted{color:var(--ok)} .ev.rolled_back{color:var(--bad)}
 
 /* overlays */
-.overlay{position:fixed;inset:0;background:rgba(2,2,5,.88);backdrop-filter:blur(8px);
+.overlay{position:fixed;inset:0;background:rgba(2,2,5,.93);
   display:grid;place-items:center;z-index:60;animation:fade .2s ease both}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 /* The sheet must read clearly against a near-black page, so it steps up in
@@ -244,6 +249,9 @@ const PAGES=[
  {id:'loop',     icon:'↻', title:'Loop',      key:'3', blurb:'The governed cycle: observe, propose, gate, promote or roll back. Run one and watch the decision.'},
  {id:'witness',  icon:'⛓', title:'Witness',   key:'4', blurb:'The signed, hash-chained record of every decision this box has made.'},
  {id:'hardware', icon:'▦', title:'Hardware',  key:'5', blurb:'Drive the outputs directly — the 8×8 matrix and the character LCD.'},
+ {id:'tools',    icon:'⬡', title:'ruvnet',     key:'6', blurb:'The ruvnet stack on this box, probed rather than declared — and this box auditing its own accuracy claims.'},
+ {id:'apps',     icon:'✦', title:'Applications',key:'7', blurb:'What this combination of sensors and tools can actually be built into, and what each one still needs.'},
+ {id:'settings', icon:'⚙', title:'Settings',   key:'8', blurb:'Thresholds, bounds and security posture. Values are read from the running box, not from defaults.'},
 ];
 let page='overview', timer=null, hist=[];
 const $=s=>document.querySelector(s);
@@ -288,21 +296,41 @@ function paintLink(){
     document.body.classList.remove('stale');
   }
 }
-setInterval(paintLink,1000);
+/* Only repaint when the state it displays actually changes. A once-a-second
+   DOM write for an unchanged label is a wakeup the Pi does not need, and it
+   defeats the browser's idle throttling. */
+let lastLinkPaint='';
+setInterval(()=>{
+  const key = link.ok===false ? 'down'+Math.round((Date.now()-link.lastOk)/1000) : String(link.ok);
+  if(key!==lastLinkPaint){ lastLinkPaint=key; paintLink(); }
+},1000);
 
 const api=async(p,o)=>{
-  o=Object.assign({},o); o.headers=authHeaders(o.headers);
+  const base=Object.assign({},o);
+  let opt=Object.assign({},base); opt.headers=authHeaders(base.headers);
   let r;
-  try{ r=await fetch(p,o); }
+  try{ r=await fetch(p,opt); }
   catch(e){ markLink(false,true); return {__offline:true}; }
+
+  /* A stored token that the server rejects is worse than no token at all: on
+     the box itself the loopback grant would have allowed the read, so a stale
+     credential locks the user out of a console they are sitting in front of.
+     Drop it and retry once unauthenticated before asking for anything. */
+  if(r.status===401 && TOK()){
+    sessionStorage.removeItem('rultra_token');
+    const bare=Object.assign({},base);
+    try{ r=await fetch(p,bare); }
+    catch(e){ markLink(false,true); return {__offline:true}; }
+  }
   if(r.status===401){markLink(true);askToken();return {__unauthorized:true}}
   markLink(r.ok,false);
   if(!r.ok)return {__offline:true};
   return r.json().catch(()=>({}));
 };
 
+let tokenPromptDismissed=false;
 function askToken(msg){
-  if($('#tokgate'))return;
+  if($('#tokgate')||tokenPromptDismissed)return;
   const o=document.createElement('div'); o.className='overlay'; o.id='tokgate';
   o.innerHTML=`<div class="sheet"><h3>Console token</h3>
     <p style="color:var(--rv-text-3);font-size:13px;line-height:1.6;margin:0 0 16px">
@@ -313,18 +341,23 @@ function askToken(msg){
              border:1px solid var(--rv-border-light);color:var(--rv-text);font-size:14px;
              font-family:ui-monospace,monospace;outline:none">
     <div style="display:flex;gap:9px;margin-top:15px;justify-content:flex-end">
-      <button class="btn gold" id="toksave">Unlock</button></div></div>`;
+      <button class="btn" id="tokcancel">Continue read-only</button>
+      <button class="btn gold" id="toksave">Unlock</button></div>
+    <div style="margin-top:12px;font-size:11.5px;color:var(--rv-text-3);line-height:1.55">
+      On the box itself you do not need one — read access is granted to local
+      windows. A token is only required to run cycles or drive hardware.</div></div>`;
   document.body.appendChild(o);
   const inp=$('#tokin'); inp.focus();
   const save=()=>{
     const v=inp.value.trim(); if(!v)return;
-    sessionStorage.setItem('rultra_token',v); o.remove(); render();
+    sessionStorage.setItem('rultra_token',v); tokenPromptDismissed=false; o.remove(); render();
   };
   $('#toksave').onclick=save;
+  $('#tokcancel').onclick=close;
   inp.addEventListener('keydown',e=>{
     e.stopPropagation();
     if(e.key==='Enter')save();
-    if(e.key==='Escape')o.remove();
+    if(e.key==='Escape')close();
   });
 }
 const fmt=(n,d=1)=>n==null?'—':Number(n).toFixed(d);
@@ -400,7 +433,7 @@ function shell(body,actions=''){
     <div class="hint">
       <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move</span>
       <span><kbd>enter</kbd> activate</span>
-      <span><kbd>1</kbd>–<kbd>5</kbd> jump</span>
+      <span><kbd>1</kbd>–<kbd>8</kbd> jump</span>
       <span><kbd>backspace</kbd> back</span>
       <span><kbd>r</kbd> refresh</span>
       <span><kbd>?</kbd> keys</span>
@@ -414,7 +447,13 @@ function shell(body,actions=''){
   stagger();
 }
 function stagger(){
-  document.querySelectorAll('.card,.centry').forEach((c,i)=>c.style.animationDelay=(i*26)+'ms');
+  /* Only the first dozen get a staggered entrance. Beyond that the delay is
+     longer than anyone waits, and animating a long witness list costs real
+     frames on a Pi for motion nobody sees. */
+  document.querySelectorAll('.card,.centry').forEach((c,i)=>{
+    if(i<12) c.style.animationDelay=(i*26)+'ms';
+    else c.style.animation='none';
+  });
 }
 
 function spark(vals,color,id){
@@ -490,6 +529,125 @@ async function render(){
   if(page==='loop')          return renderLoop();
   if(page==='witness')       return renderWitness();
   if(page==='hardware')      return renderHardware();
+  if(page==='tools')         return renderTools();
+  if(page==='apps')          return renderApps();
+  if(page==='settings')      return renderSettings();
+}
+
+async function renderTools(){
+  const t=await api('/api/tools');
+  if(t.__unauthorized)return; if(t.__offline)return staleShell();
+  const rv=t.tools.find(x=>x.id==='ruview');
+  const src=rv?.health?.source;
+  shell(`<div class="grid wide">${t.tools.map(x=>`
+    <div class="card" tabindex="0">
+      <div class="rowhead">
+        <div><div class="label">${x.id}</div>
+          <div style="font-size:14px;color:var(--rv-text-2);margin-top:4px;line-height:1.5">${x.role}</div></div>
+        <span class="badge ${x.present?'working':'untested'}">${x.present?'present':'absent'}</span>
+      </div>
+      ${x.endpoint?`<div class="sub mono" style="margin-top:9px">${x.endpoint}${x.health?` · ${x.health.status}`:''}</div>`:''}
+      ${x.id==='ruview'&&src?`<div class="evi">data source <b style="color:${src==='simulated'?'var(--warn)':'var(--ok)'}">${src}</b> — reported by ruview itself. ${src==='simulated'?'Not live radio.':''}</div>`:''}
+    </div>`).join('')}</div>
+    <div style="margin-top:20px"></div>
+    <div class="card" tabindex="0" data-act="claimcheck">
+      <div class="rowhead"><div class="label">Self-audit</div>
+        <span class="badge untested">press enter</span></div>
+      <div class="big" style="font-size:25px">lint our own claims</div>
+      <div class="sub">Runs <span class="mono">ruview claim-check</span> over every evidence string in this
+      box's device catalog. Those strings are accuracy claims about hardware; this is someone else's
+      linter deciding whether they hold up.</div>
+    </div>
+    <div id="cc-out" style="margin-top:16px"></div>`);
+  focusFirst();
+}
+
+async function runClaimCheck(){
+  const out=$('#cc-out');
+  out.innerHTML='<div class="card"><div class="label">auditing…</div><div class="sub">running claim-check over every evidence string</div></div>';
+  const r=await api('/api/claimcheck');
+  if(r.__unauthorized||r.__offline)return;
+  const clean=r.flagged===0;
+  out.innerHTML=`<div class="card">
+    <div class="rowhead"><div class="label">claim-check · ${r.checked} evidence strings</div>
+      <span class="badge ${clean?'working':'acks_but_silent'}">${clean?'all pass':r.flagged+' flagged'}</span></div>
+    <div class="chain">${r.results.map(x=>{
+      const ok=x.verdict?.ok;
+      return `<div class="centry">
+        <span class="seq">${x.device}</span>
+        <span class="ev ${ok===true?'promoted':ok===false?'rolled_back':'observed'}">${ok===true?'pass':ok===false?'flagged':'n/a'}</span>
+        <span class="dt">${(x.verdict?.summary||x.verdict?.findings?.[0]?.reason||'—')}</span></div>`;
+    }).join('')}</div>
+    <div class="evi">${clean
+      ? 'Every claim this box makes about its own hardware passes an external honesty linter.'
+      : 'Flagged claims are overstated or untagged. That is a bug in the evidence, not in the linter.'}</div>
+  </div>`;
+  stagger(); toast(clean?'claim-check: all pass':'claim-check: '+r.flagged+' flagged', clean?'ok':'err');
+}
+
+const APPS=[
+ {n:'Ambient presence light', need:'range + matrix', have:true,
+  d:'The matrix already mirrors proximity as sonar rings. Add the buzzer and it announces arrival.'},
+ {n:'Thermal-aware duty cycling', need:'temp + governed loop', have:true,
+  d:'Running now: the box backs its own sampling off when it heats, through a gate that can refuse it.'},
+ {n:'Signed environmental log', need:'sensors + witness chain', have:true,
+  d:'Every reading and decision already lands in a hash-chained, signed record you can verify offline.'},
+ {n:'Agent-operated instrument', need:'MCP + ruv:// resources', have:true,
+  d:'An agent reads ruv://rultra/telemetry and drives the panel, with read and control as separate capabilities.'},
+ {n:'Room occupancy without cameras', need:'ruview WiFi CSI', have:false,
+  d:'ruview is running here but on simulated data. Live CSI needs an ESP32 node feeding it real radio.'},
+ {n:'Semantic sensor history', need:'ruvector embeddings', have:false,
+  d:'Store telemetry as vectors and ask "when was it last this warm and this dark?" Needs an embedding pass.'},
+ {n:'Spatially-steered generative media', need:'cognitum-media authorization', have:false,
+  d:'Request planning is built and contract-tested. Needs an allowlisted service account and a budget.'},
+ {n:'Calibrated rangefinding', need:'a ruler', have:false,
+  d:'The range finder is stable and unvalidated. One measurement against a known distance promotes it.'},
+];
+
+async function renderApps(){
+  shell(`<div class="grid wide">${APPS.map(a=>`
+    <div class="card" tabindex="0">
+      <div class="rowhead"><div class="label">${a.need}</div>
+        <span class="badge ${a.have?'working':'untested'}">${a.have?'buildable now':'needs more'}</span></div>
+      <div style="font-size:16px;font-weight:600;margin:4px 0 7px">${a.n}</div>
+      <div class="sub">${a.d}</div>
+    </div>`).join('')}</div>`);
+  focusFirst();
+}
+
+async function renderSettings(){
+  const [p,sch,s]=await Promise.all([api('/api/policy'),api('/api/schedule'),api('/api/summary')]);
+  if(p.__unauthorized)return; if(p.__offline)return staleShell();
+  const row=(k,v,note)=>`<div class="centry"><span class="seq" style="min-width:170px">${k}</span>
+    <span class="ev" style="min-width:120px;color:var(--rv-text)">${v}</span>
+    <span class="dt">${note||''}</span></div>`;
+  shell(`<div class="card"><div class="label">sensing policy — live values from the box</div>
+    <div class="chain">
+      ${row('poll interval', p.poll_interval_ms+' ms','what the governed loop currently has in force')}
+      ${row('poll bounds', p.min_poll_ms+' – '+p.max_poll_ms+' ms','a mutation outside these is refused')}
+      ${row('thermal comfort', fmt(p.thermal_comfort_c,0)+' °C','below this it may sample faster')}
+      ${row('thermal ceiling', fmt(p.thermal_ceiling_c,0)+' °C','above this it backs off; safety scores 0')}
+      ${row('policy hash', (p.content_hash||'').slice(0,20)+'…','content-addressed; the rollback target')}
+    </div></div>
+  <div style="margin-top:16px"></div>
+  <div class="card"><div class="label">loop</div>
+    <div class="chain">
+      ${row('unattended', sch.timer_active?'every 15 min':'manual only', sch.next_elapse?String(sch.next_elapse).split(' ').slice(0,4).join(' '):'')}
+      ${row('last decision', sch.last_decision||'—', sch.last_gate_reason||'')}
+      ${row('witness entries', s.witness_entries??'—','signed and hash-chained')}
+    </div></div>
+  <div style="margin-top:16px"></div>
+  <div class="card"><div class="label">security posture</div>
+    <div class="chain">
+      ${row('read access','token or local window','loopback gets read-only with no credential')}
+      ${row('control access','token required','running cycles and driving hardware, always')}
+      ${row('token transport','header only','never a query parameter — URLs reach logs and history')}
+      ${row('remote unauthenticated','refused','asserted from off the box on every deploy')}
+    </div>
+    <div class="evi">Tokens live in <span class="mono">/etc/rultra/ui.env</span> (mode 0600) and are never
+    displayed here. Read and control are independent values, not one derived from the other.</div>
+  </div>`);
+  focusFirst();
 }
 
 async function renderOverview(){
@@ -549,9 +707,13 @@ async function renderOverview(){
     const n=await api('/api/summary');
     series.temp.push(n.die_temp_c); series.lux.push(n.lux);
     if(series.temp.length>40){series.temp.shift();series.lux.shift()}
-    const cards=document.querySelectorAll('.card .big');
-    if(cards[0])cards[0].innerHTML=`${fmt(n.die_temp_c)}<span class="unit">°C</span>`;
-    if(cards[1])cards[1].innerHTML=`${fmt(n.lux)}<span class="unit">lux</span>`;
+    // One frame, one write pass: two synchronous innerHTML writes force two
+    // style recalculations, and on a Pi that is visible as a hitch.
+    requestAnimationFrame(()=>{
+      const cards=document.querySelectorAll('.card .big');
+      if(cards[0])cards[0].innerHTML=`${fmt(n.die_temp_c)}<span class="unit">°C</span>`;
+      if(cards[1])cards[1].innerHTML=`${fmt(n.lux)}<span class="unit">lux</span>`;
+    });
   },3000);
 }
 
@@ -672,6 +834,7 @@ async function act(a){
   if(!a)return;
   if(a.startsWith('go:'))return go(a.slice(3));
   if(a==='cycle')return runCycle();
+  if(a==='claimcheck')return runClaimCheck();
   if(a.startsWith('matrix:')){
     const pattern=a.split(':')[1];
     let text;
@@ -718,7 +881,7 @@ function help(){
   o.innerHTML=`<div class="sheet"><h3>Keyboard</h3><div class="keys">
     <kbd>← → ↑ ↓</kbd><span>Move between cards (grid-aware)</span>
     <kbd>enter / space</kbd><span>Activate the focused card</span>
-    <kbd>1 – 5</kbd><span>Jump straight to a section</span>
+    <kbd>1 – 8</kbd><span>Jump straight to a section</span>
     <kbd>j / k</kbd><span>Next / previous section</span>
     <kbd>backspace</kbd><span>Back to the previous section</span>
     <kbd>r</kbd><span>Refresh this page</span>
@@ -726,7 +889,11 @@ function help(){
     <kbd>?</kbd><span>This panel</span>
     <kbd>esc</kbd><span>Close</span>
   </div></div>`;
-  o.onclick=()=>o.remove(); document.body.appendChild(o);
+  // Dismissing is a real choice, not a deferral: re-opening on the next poll
+  // would trap someone who simply wants to read what the box already shows.
+  const close=()=>{tokenPromptDismissed=true;o.remove();};
+  o.onclick=(e)=>{ if(e.target===o) close(); };
+  document.body.appendChild(o);
 }
 function refresh(){render();toast('refreshed')}
 
