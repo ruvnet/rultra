@@ -11,6 +11,27 @@ use rultra_sense::{device, DeviceId, DeviceKind, Verification};
 use rultra_witness::Chain;
 use serde_json::{json, Value as J};
 
+/// three.js, served from the binary.
+///
+/// Vendored rather than CDN-loaded: this is an appliance that may have no
+/// internet, and a screensaver that fails offline is not a screensaver. The
+/// console never loads it at startup — the client fetches it only when the
+/// screensaver actually activates, so an idle feature costs nothing until it
+/// is used.
+pub async fn vendor_three() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "application/javascript"),
+            // Immutable: the file only changes when the binary does.
+            (
+                axum::http::header::CACHE_CONTROL,
+                "public, max-age=31536000, immutable",
+            ),
+        ],
+        include_str!("../ui/vendor/three.min.js"),
+    )
+}
+
 pub async fn index() -> Html<&'static str> {
     // One definition, in the module that also structurally validates it — so
     // what ships is exactly what the tests checked.

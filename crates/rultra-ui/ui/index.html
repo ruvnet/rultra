@@ -215,9 +215,10 @@ body.stale .main .card .sub{opacity:.42;filter:saturate(.25)}
    figure and returns on any input. */
 #saver{position:fixed;inset:0;z-index:90;background:var(--rv-bg);
   display:grid;place-items:center;animation:fade 1.2s ease both;cursor:none}
-#saver .wrap{text-align:center;animation:drift 48s ease-in-out infinite alternate}
+#saver .wrap{text-align:center}
 @keyframes drift{from{transform:translate(-4vw,-3vh) scale(.96)}to{transform:translate(4vw,3vh) scale(1.04)}}
 #saver svg{width:min(46vmin,340px);height:auto;display:block;margin:0 auto}
+#saver-gl{width:min(74vmin,620px);height:min(74vmin,620px);display:block;margin:0 auto}
 #saver .ring{animation:sweep 6s cubic-bezier(.4,0,.2,1) infinite}
 @keyframes sweep{0%{stroke-opacity:.06}45%{stroke-opacity:.5}100%{stroke-opacity:.06}}
 #saver .meta{margin-top:26px;font-size:13px;color:var(--rv-text-3);
@@ -412,6 +413,7 @@ function go(id,push=true){
 let suppressHash=false;
 function fromHash(){
   const id=(location.hash||'').replace(/^#/,'');
+  if(id==='saver'){ showSaver(); return page; }
   return PAGES.find(p=>p.id===id)?id:'overview';
 }
 addEventListener('hashchange',()=>{
@@ -1027,6 +1029,7 @@ function help(){
     <kbd>backspace</kbd><span>Back to the previous section</span>
     <kbd>r</kbd><span>Refresh this page</span>
     <kbd>c</kbd><span>Run one governed cycle</span>
+    <kbd>s</kbd><span>Preview the screensaver (auto after 1h idle)</span>
     <kbd>?</kbd><span>This panel</span>
     <kbd>esc</kbd><span>Close</span>
   </div></div>`;
@@ -1040,6 +1043,9 @@ function refresh(){render();toast('refreshed')}
 
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
+  // Any key wakes the screensaver and does nothing else, so a keystroke meant
+  // to dismiss it never also navigates somewhere unexpected.
+  if(saverOn){ e.preventDefault(); resetIdle(); return; }
   const o=$('.overlay');
   if(e.key==='Escape'){o&&o.remove();return}
   if(o)return;
@@ -1052,6 +1058,9 @@ addEventListener('keydown',e=>{
   if(k==='?'){e.preventDefault();help();return}
   if(k==='r'){e.preventDefault();refresh();return}
   if(k==='c'){e.preventDefault();go('loop');setTimeout(runCycle,120);return}
+  /* Preview the screensaver. Waiting an hour to see whether it renders is not
+     a workable way to develop or demo it. */
+  if(k==='s'){e.preventDefault();showSaver();return}
   const p=PAGES.find(p=>p.key===k); if(p){e.preventDefault();go(p.id);return}
   const i=PAGES.findIndex(p=>p.id===page);
   if(k==='j'){e.preventDefault();go(PAGES[(i+1)%PAGES.length].id)}
@@ -1065,19 +1074,31 @@ page=fromHash();
 const SAVER_AFTER_MS = 60*60*1000;   // one hour
 let idleTimer=null, saverOn=false;
 
+let saverCtx=null;   // three.js scene, torn down on wake
+
+/* Lazy: 589KB of library must not be part of console startup for a feature
+   that fires after an hour of nobody looking. */
+function loadThree(){
+  if(window.THREE)return Promise.resolve(true);
+  return new Promise(res=>{
+    const t=document.createElement('script');
+    t.src='/vendor/three.min.js';
+    t.onload=()=>res(true);
+    t.onerror=()=>res(false);   // fall back to the SVG figure, never a blank screen
+    document.head.appendChild(t);
+  });
+}
+
 function showSaver(){
   if(saverOn||$('#saver'))return;
   saverOn=true;
   const d=document.createElement('div'); d.id='saver';
-  d.innerHTML=`<div class="wrap">
-    <svg viewBox="0 0 120 120" aria-hidden="true">
-      ${[52,40,28,16].map((r,i)=>`<circle cx="60" cy="60" r="${r}" fill="none"
-        stroke="var(--rv-gold)" stroke-width="1.4" class="ring"
-        style="animation-delay:${i*700}ms"/>`).join('')}
-      <circle cx="60" cy="60" r="4" fill="var(--rv-gold)" fill-opacity=".75"/>
-    </svg>
+  d.innerHTML=`<div class="wrap" id="saver-wrap">
+    <canvas id="saver-gl"></canvas>
     <div class="meta" id="saver-meta">rultra</div></div>`;
   document.body.appendChild(d);
+
+  loadThree().then(ok=>{ if(saverOn) ok ? startField() : startFallback(); });
 
   /* Keep showing live readings while idle — a screensaver on an instrument
      should still be an instrument. Slowly, because nobody is reading it. */
@@ -1087,16 +1108,147 @@ function showSaver(){
     const m=$('#saver-meta');
     if(m&&!s.__offline&&!s.__unauthorized){
       m.innerHTML=`<b>${fmt(s.die_temp_c)}</b> °C &nbsp;·&nbsp; <b>${fmt(s.lux)}</b> lux
-        &nbsp;·&nbsp; <b>${s.witness_entries}</b> signed`;
+        &nbsp;·&nbsp; <b>${(s.proximity||'—')}</b> &nbsp;·&nbsp; <b>${s.witness_entries}</b> signed`;
+      if(saverCtx) saverCtx.data = s;
     }
     if(saverOn) setTimeout(tick, 30000);
   };
   tick();
 }
 
+/* If three.js cannot load, draw the flat figure rather than nothing. */
+function startFallback(){
+  const w=$('#saver-wrap'); if(!w)return;
+  // Rebuilds the wrap, so #saver-meta is recreated below and the live tick
+  // keeps finding it.
+  w.innerHTML=`<svg viewBox="0 0 120 120" style="width:min(46vmin,340px)">
+    ${[52,40,28,16].map((r,i)=>`<circle cx="60" cy="60" r="${r}" fill="none"
+      stroke="var(--rv-gold)" stroke-width="1.4" class="ring"
+      style="animation-delay:${i*700}ms"/>`).join('')}
+    <circle cx="60" cy="60" r="4" fill="var(--rv-gold)" fill-opacity=".75"/></svg>
+    <div class="meta" id="saver-meta">rultra</div>`;
+}
+
+/* The sensor field: a slowly breathing volume whose shape is the box's own
+   readings. Not decoration with numbers attached — the geometry IS the data.
+   Shell radius follows proximity, particle brightness follows ambient light,
+   and hue runs from cool to gold as the die warms toward its ceiling. */
+function startField(){
+  const cv=$('#saver-gl'); if(!cv||!window.THREE)return startFallback();
+  /* WebGL can be absent or fail to initialise — a headless context, a machine
+     with no GPU, a driver that refuses. Constructing the renderer THROWS in
+     that case, and an unguarded throw here takes the whole page down with it.
+     Degrade to the flat figure instead: a screensaver must never be the reason
+     a console stops working. */
+  try{ return startFieldInner(cv); }
+  catch(e){ console.warn('WebGL unavailable, using the flat figure:', e); return startFallback(); }
+}
+
+function startFieldInner(cv){
+  const W=()=>cv.clientWidth||window.innerWidth, H=()=>cv.clientHeight||window.innerHeight;
+  if(!(document.createElement('canvas').getContext('webgl2')||
+       document.createElement('canvas').getContext('webgl'))) throw new Error('no webgl context');
+
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:false,alpha:true,powerPreference:'low-power'});
+  // Capped at 1: a Pi rendering a retina-density screensaver for hours is
+  // four times the pixels for something nobody is looking at closely.
+  renderer.setPixelRatio(1);
+  renderer.setSize(W(),H(),false);
+
+  const scene=new THREE.Scene();
+  const cam=new THREE.PerspectiveCamera(48, W()/H(), 0.1, 100);
+  cam.position.set(0,0,15);
+
+  // Concentric wireframe shells — the sonar figure, in three dimensions.
+  const shells=[];
+  [3.2,5.0,6.8,8.6].forEach((r,i)=>{
+    const m=new THREE.Mesh(
+      new THREE.IcosahedronGeometry(r,1),
+      new THREE.MeshBasicMaterial({color:0xe8a634,wireframe:true,transparent:true,opacity:0.10})
+    );
+    m.userData={base:r,phase:i*0.9};
+    shells.push(m); scene.add(m);
+  });
+
+  // A particle shell. 1400 points is comfortable on V3D at 30fps and still
+  // reads as a field rather than a handful of dots.
+  const COUNT=1400;
+  const pos=new Float32Array(COUNT*3);
+  const seed=new Float32Array(COUNT);
+  for(let i=0;i<COUNT;i++){
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=6+Math.random()*3.5;
+    pos[i*3]=r*Math.sin(ph)*Math.cos(th);
+    pos[i*3+1]=r*Math.sin(ph)*Math.sin(th);
+    pos[i*3+2]=r*Math.cos(ph);
+    seed[i]=Math.random();
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pmat=new THREE.PointsMaterial({color:0xe8a634,size:0.055,transparent:true,opacity:0.5,
+    sizeAttenuation:true,depthWrite:false,blending:THREE.AdditiveBlending});
+  const points=new THREE.Points(geo,pmat);
+  scene.add(points);
+
+  saverCtx={renderer,scene,cam,shells,points,pmat,data:null,raf:null,last:0};
+
+  const PROX={empty:0,far:0.35,near:0.7,close:1};
+  const onResize=()=>{ renderer.setSize(W(),H(),false); cam.aspect=W()/H(); cam.updateProjectionMatrix(); };
+  addEventListener('resize',onResize);
+  saverCtx.onResize=onResize;
+
+  const frame=(t)=>{
+    if(!saverOn)return;
+    saverCtx.raf=requestAnimationFrame(frame);
+    // 30fps is plenty for something this slow, and halves the GPU cost of a
+    // view that may stay up all night.
+    if(t-saverCtx.last < 33) return;
+    saverCtx.last=t;
+
+    const d=saverCtx.data||{};
+    const prox=PROX[d.proximity]??0.2;
+    const lux=Math.min(1,(d.lux??20)/300);
+    const temp=Math.min(1,Math.max(0,((d.die_temp_c??55)-45)/30));  // 45..75C
+    const time=t*0.00013;
+
+    // Hue: cool at rest, gold as it warms toward the thermal ceiling.
+    const col=new THREE.Color().setHSL(0.115 - temp*0.10, 0.75, 0.5 + lux*0.12);
+    saverCtx.pmat.color.copy(col);
+    saverCtx.pmat.opacity = 0.28 + lux*0.35;
+
+    shells.forEach((m,i)=>{
+      const pulse = 1 + Math.sin(time*6 + m.userData.phase)*0.05;
+      m.scale.setScalar(pulse * (0.75 + prox*0.5));
+      m.material.color.copy(col);
+      m.material.opacity = 0.05 + prox*0.14;
+      m.rotation.y = time*(0.6 + i*0.12);
+      m.rotation.x = time*0.35;
+    });
+    points.rotation.y = -time*0.5;
+    points.rotation.z = time*0.18;
+    cam.position.x = Math.sin(time*0.7)*2.2;
+    cam.position.y = Math.cos(time*0.5)*1.4;
+    cam.lookAt(0,0,0);
+
+    renderer.render(scene,cam);
+  };
+  saverCtx.raf=requestAnimationFrame(frame);
+}
+
 function hideSaver(){
-  const d=$('#saver'); if(d)d.remove();
   saverOn=false;
+  /* Tear the scene down rather than leaving it paused: three.js holds GPU
+     buffers until they are explicitly disposed, and a console woken and idled
+     repeatedly over days would otherwise accumulate them. */
+  if(saverCtx){
+    cancelAnimationFrame(saverCtx.raf);
+    removeEventListener('resize',saverCtx.onResize);
+    saverCtx.shells.forEach(m=>{m.geometry.dispose();m.material.dispose();});
+    saverCtx.points.geometry.dispose();
+    saverCtx.pmat.dispose();
+    saverCtx.renderer.dispose();
+    saverCtx=null;
+  }
+  const d=$('#saver'); if(d)d.remove();
 }
 
 function resetIdle(){
@@ -1108,8 +1260,16 @@ function resetIdle(){
   addEventListener(ev, resetIdle, {passive:true}));
 resetIdle();
 
-page=fromHash();
-renderNav(); render();
+/* #saver activates it directly. Useful for a wall display that should start in
+   ambient mode, and the only way to test it without waiting an hour or
+   depending on synthetic keystrokes landing in the right window. */
+if((location.hash||'')==='#saver'){
+  page='overview'; renderNav(); render();
+  setTimeout(showSaver, 300);
+}else{
+  page=fromHash();
+  renderNav(); render();
+}
 </script>
 </body>
 </html>

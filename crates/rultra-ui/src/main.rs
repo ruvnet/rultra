@@ -26,7 +26,10 @@ async fn guard(req: Request, next: Next) -> Result<Response, axum::http::StatusC
     // The shell at "/" is static markup with no data and no secrets; it is what
     // prompts for the token in the first place, so it must be reachable without
     // one. Everything under /api stays behind the guard.
-    if req.uri().path() == "/" {
+    // The shell and the vendored library are static, carry no data and no
+    // secrets, and are what the page needs before it can authenticate at all.
+    let path = req.uri().path();
+    if path == "/" || path == "/vendor/three.min.js" {
         return Ok(next.run(req).await);
     }
     let control = std::env::var("RULTRA_UI_TOKEN").ok();
@@ -73,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(api::index))
+        .route("/vendor/three.min.js", get(api::vendor_three))
         .route("/api/summary", get(api::summary))
         .route("/api/devices", get(api::devices))
         .route("/api/telemetry", get(api::telemetry))
