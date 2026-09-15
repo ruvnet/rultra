@@ -269,6 +269,25 @@ impl LinuxBackend {
         Ok(())
     }
 
+    /// Play a sequence of frames on one open SPI handle.
+    ///
+    /// `matrix_draw` re-runs `matrix_init` on every call, and init blanks all
+    /// eight rows before drawing. That is correct for a single static frame and
+    /// wrong for an animation: each frame becomes blank-then-draw, so the panel
+    /// spends part of every frame dark and the motion reads as flicker rather
+    /// than movement. `matrix_scroll` already opens the bus once for exactly
+    /// this reason; animation does the same.
+    pub fn matrix_animate(frames: &[([u8; 8], u64)]) -> anyhow::Result<()> {
+        let mut spi = Self::matrix_init()?;
+        for (rows, hold_ms) in frames {
+            for (i, b) in rows.iter().enumerate() {
+                Self::word(&mut spi, i as u8 + 1, *b)?;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(*hold_ms));
+        }
+        Ok(())
+    }
+
     /// Draw rows at a given brightness (0..=15).
     ///
     /// Intensity is set before the rows so the panel never flashes at the old

@@ -433,21 +433,21 @@ pub async fn matrix(Json(req): Json<MatrixReq>) -> impl IntoResponse {
                 use rultra_spatial::visual::heart;
                 let bpm = req.bpm.unwrap_or(heart::DEFAULT_BPM);
                 let cycles = beat_cycles(req.cycles);
-                let frames = heart::beat(bpm);
-                let mut out = Ok(());
-                'play: for _ in 0..cycles {
-                    for f in &frames {
-                        if let Err(e) = LinuxBackend::matrix_draw(&f.rows) {
-                            out = Err(e);
-                            break 'play;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(f.hold_ms));
-                    }
+                // One flat frame list played on a single open SPI handle.
+                // Calling matrix_draw per frame re-inits the chip each time,
+                // and init blanks all eight rows first — so every frame would
+                // start dark and the motion would read as flicker.
+                let cycle = heart::beat(bpm);
+                let mut frames: Vec<([u8; 8], u64)> =
+                    Vec::with_capacity(cycle.len() * cycles as usize);
+                for _ in 0..cycles {
+                    frames.extend(cycle.iter().map(|f| (f.rows, f.hold_ms)));
                 }
-                // Leave the panel showing the full heart rather than whatever
-                // phase the loop happened to end on — a display abandoned
-                // mid-contraction reads as a crash.
-                out.and_then(|()| LinuxBackend::matrix_draw(&HEART))
+                LinuxBackend::matrix_animate(&frames)
+                    // Leave the panel showing the full heart rather than
+                    // whatever phase the loop ended on — a display abandoned
+                    // mid-contraction reads as a crash.
+                    .and_then(|()| LinuxBackend::matrix_draw(&HEART))
             }
             other => Err(anyhow::anyhow!("unknown pattern: {other}")),
         };
