@@ -12,6 +12,7 @@
 #![warn(missing_docs)]
 
 pub mod backend;
+pub mod buttons;
 pub mod device;
 pub mod font;
 

@@ -24,6 +24,14 @@ pub enum DeviceId {
     Range,
     /// Passive piezo buzzer.
     Buzzer,
+    /// PIR motion detector.
+    Motion,
+    /// Digital sound/noise detector.
+    Sound,
+    /// Capacitive touch pad.
+    Touch,
+    /// Infrared remote receiver.
+    InfraRed,
 }
 
 /// Whether a device is an input, an output, or both.
@@ -68,6 +76,19 @@ pub enum Bus {
         trigger: u32,
         /// Line the device drives back.
         echo: u32,
+    },
+    /// A scanned key matrix: columns are driven, rows are sampled.
+    ///
+    /// Distinct from a set of `Gpio` lines because a scanned matrix cannot be
+    /// read passively at all — with every column at rest, no press changes any
+    /// row. Three passive sweeps of this board found zero events before that
+    /// was understood, so the bus type now says it outright.
+    GpioMatrix {
+        /// Sampled lines. Require a pull-up; a floating row reads as every
+        /// button in it being held down.
+        rows: [u32; 4],
+        /// Driven lines. Rest high, pulled low one at a time to scan.
+        cols: [u32; 4],
     },
     /// Exposed by the kernel through sysfs rather than a raw bus.
     Sysfs {
@@ -189,47 +210,98 @@ pub const CATALOG: &[Device] = &[
     },
     Device {
         id: DeviceId::Buttons,
-        part: "tactile switches",
-        bus: Bus::Gpio { line: 0 },
+        part: "4x4 tactile matrix",
+        bus: Bus::GpioMatrix {
+            rows: crate::buttons::ROWS,
+            cols: crate::buttons::COLS,
+        },
         kind: DeviceKind::Sensor,
-        verification: Verification::Untested,
-        evidence: "High/low states were read via libgpiod during bring-up, but the \
-                   specific BCM lines were never recorded. The line number here is a \
-                   placeholder and must be pinned before this can claim Working.",
+        verification: Verification::Working,
+        evidence: "Ten distinct buttons observed across 76 presses, with a clean \
+                   all-high baseline. Pins are Elecrow Examples/button_matrix.py \
+                   converted from BOARD to BCM: rows 27,22,5,6 in, cols 13,19,26,25 \
+                   out. TWO TRAPS: (1) a scanned matrix is invisible to passive \
+                   gpiomon - three sweeps found zero events before a column was \
+                   driven; (2) rows need a pull-up, and gpio-cdev 0.6 cannot set \
+                   bias, so without `pinctrl set 5,6,22,27 ip pu` a floating row \
+                   decoded as four buttons held forever - 572 phantom presses in \
+                   40s. Columns MUST be returned to high; leaving them low lights \
+                   board LEDs.",
     },
     Device {
         id: DeviceId::Tilt,
         part: "tilt switch",
-        bus: Bus::Gpio { line: 0 },
+        bus: Bus::Gpio { line: 22 },
         kind: DeviceKind::Sensor,
         verification: Verification::Untested,
-        evidence: "State changes observed via libgpiod during bring-up; BCM line not \
-                   recorded. Placeholder line number — must be pinned before use.",
+        evidence: "Line taken from Elecrow Examples/tilt.py (BCM 22), replacing a \
+                   placeholder of 0. Not yet exercised here. NOTE: BCM22 is also \
+                   button-matrix row 1, so the two cannot be read independently \
+                   without care - a tilt read during a column scan is ambiguous.",
     },
     Device {
         id: DeviceId::Range,
         part: "HC-SR04",
         bus: Bus::GpioPair {
-            trigger: 23,
-            echo: 24,
+            trigger: 16,
+            echo: 12,
         },
         kind: DeviceKind::Sensor,
-        verification: Verification::Faulty,
-        evidence: "ECHO (GPIO24) IS FLOATING — the reading is noise, not distance. \
-                   Measured with gpiomon: 29,815 edges in 40s (~745 Hz) continuously, \
-                   and 3,736 in a 5s window whose inter-arrival gaps spread across every \
-                   timescale (420 under 0.1ms, 1425 at 0.1-1ms, 1699 at 1-10ms, only 191 \
-                   over 10ms). A real HC-SR04 driven by the 1Hz poller emits ONE pulse \
-                   per trigger with ~1s of silence between, so unstructured chatter at \
-                   every scale is a line nothing is driving. That also explains the \
-                   4.58cm mean that looked so trustworthy: 4.66cm is a 272us pulse \
-                   (2 x 0.0466 / 343), the driver catches the first noise edge just past \
-                   its 100us crosstalk guard, and the median-of-5 latches the same noise \
-                   floor five times. Repeatability came from the noise being stationary, \
-                   not from the sensor working. Same signature as a floating UART RX pin \
-                   (see rultra_esp::LineState::Floating). Fix the wiring or power to the \
-                   HC-SR04 before this can claim anything; the earlier 'fixed obstruction \
-                   ~5cm from the emitter' theory is superseded and was wrong.",
+        verification: Verification::Untested,
+        evidence: "REMAPPED 2026-09-15 to the vendor pinout: Elecrow Examples/distance.py \
+                   uses TRIG=BCM16, ECHO=BCM12. This entry previously claimed 23/24, \
+                   which are the PIR (23) and the sound sensor (24). Every distance \
+                   reading this project ever produced came from pulsing the PIR output \
+                   and timing the sound sensor - including a stable 4.58cm that was \
+                   believed for a session, and a later diagnosis of a floating ECHO that \
+                   was ALSO wrong: GPIO24 chattering at ~745Hz was the sound sensor \
+                   responding to room noise, a real signal on the wrong pin. Back to \
+                   Untested because 16/12 has never been exercised; the previous Faulty \
+                   verdict described hardware that was never the range finder.",
+    },
+    Device {
+        id: DeviceId::Motion,
+        part: "PIR motion detector",
+        bus: Bus::Gpio { line: 23 },
+        kind: DeviceKind::Sensor,
+        verification: Verification::Working,
+        evidence: "Observed idle-low for 35 consecutive samples then high for 5 on a \
+                   hand wave - the retrigger-hold signature of a PIR. Line 23 from \
+                   Elecrow Examples/motion.py. It read nothing for the whole project \
+                   until now because the range-finder driver had claimed 23 as its \
+                   TRIGGER and left it as an output driving LOW, shorting the PIR\x27s \
+                   own output to ground. Never drive this line.",
+    },
+    Device {
+        id: DeviceId::Sound,
+        part: "digital sound detector",
+        bus: Bus::Gpio { line: 24 },
+        kind: DeviceKind::Sensor,
+        verification: Verification::Working,
+        evidence: "Live transitions observed while idle (0 nine times, then 1). Line 24 \
+                   from Elecrow Examples/sound.py, which biases it pull-up and treats \
+                   LOW as detection. This is the pin whose ~745Hz activity was \
+                   previously mistaken for a floating ultrasonic ECHO; it was the sound \
+                   sensor hearing the room the entire time.",
+    },
+    Device {
+        id: DeviceId::Touch,
+        part: "capacitive touch pad",
+        bus: Bus::Gpio { line: 17 },
+        kind: DeviceKind::Sensor,
+        verification: Verification::Untested,
+        evidence: "Line 17 from Elecrow Examples/touch.py (input, pull-up). Present on \
+                   the board and absent from this catalog until 2026-09-15; never \
+                   exercised here.",
+    },
+    Device {
+        id: DeviceId::InfraRed,
+        part: "IR remote receiver",
+        bus: Bus::Gpio { line: 20 },
+        kind: DeviceKind::Sensor,
+        verification: Verification::Untested,
+        evidence: "Line 20 from Elecrow Examples/IR.py (input, pull-up; NEC codes). \
+                   Present on the board and absent from this catalog until 2026-09-15.",
     },
     Device {
         id: DeviceId::Buzzer,
@@ -301,13 +373,18 @@ mod tests {
         }
     }
 
-    /// The specific regression this guards: the range finder returned a
-    /// stable 4.58cm for an entire session and was read as trustworthy
-    /// because it was repeatable. Stability is not correctness.
+    /// The regression this guards: the range finder returned a stable 4.58cm
+    /// for an entire session and was read as trustworthy because it was
+    /// repeatable. Stability is not correctness.
+    ///
+    /// It was later found to be reading the wrong pins entirely, so the state
+    /// is now `Untested` on the corrected 16/12 pair rather than `Faulty` —
+    /// the fault verdict described hardware that was never the range finder.
+    /// What must hold either way is that it is not counted as Working.
     #[test]
     fn the_range_finder_is_not_counted_among_working_devices() {
         let range = lookup(DeviceId::Range).expect("range is catalogued");
-        assert_eq!(range.verification, Verification::Faulty);
+        assert_ne!(range.verification, Verification::Working);
         assert!(
             !CATALOG
                 .iter()
@@ -400,6 +477,117 @@ mod actuator_safety_tests {
                 DeviceKind::Actuator,
                 "{id:?} must not be readable, or the telemetry loop will drive it"
             );
+        }
+    }
+}
+
+/// Elecrow's own pin assignments, transcribed from the vendor examples.
+///
+/// This table exists because a wrong pin map survived in this catalog long
+/// enough to produce two confident, published, wrong diagnoses: a stable
+/// "4.58cm" distance reading that was actually the sound sensor, and a
+/// "floating ECHO pin" that was actually that sensor hearing the room. Both
+/// were argued from real measurements. Neither was checkable against anything,
+/// because nothing tied the catalog to the hardware's documentation.
+///
+/// Source files are named per entry so a future reader can re-derive them
+/// rather than trust this transcription. Where a vendor example uses
+/// `GPIO.setmode(GPIO.BOARD)` the numbers here are already converted to BCM —
+/// that conversion is itself a trap, and has now cost this project twice
+/// (the MAX7219 chip-select and the button matrix).
+pub const VENDOR_PINS: &[(DeviceId, &str, &[u32])] = &[
+    (DeviceId::Motion, "Examples/motion.py", &[23]),
+    (DeviceId::Sound, "Examples/sound.py", &[24]),
+    (DeviceId::Touch, "Examples/touch.py", &[17]),
+    (DeviceId::InfraRed, "Examples/IR.py", &[20]),
+    (DeviceId::Tilt, "Examples/tilt.py", &[22]),
+    (DeviceId::Buzzer, "Examples/button_buzzer.py", &[18]),
+    (DeviceId::Range, "Examples/distance.py", &[16, 12]),
+    (
+        DeviceId::Buttons,
+        "Examples/button_matrix.py (BOARD->BCM)",
+        &[27, 22, 5, 6, 13, 19, 26, 25],
+    ),
+];
+
+#[cfg(test)]
+mod vendor_pin_tests {
+    use super::*;
+
+    /// Every GPIO-backed device must match the vendor's documented pins.
+    ///
+    /// This is the check whose absence allowed the range finder to spend the
+    /// project pointed at two unrelated sensors.
+    #[test]
+    fn the_catalog_agrees_with_the_vendor_pinout() {
+        for (id, source, want) in VENDOR_PINS {
+            let d = lookup(*id).unwrap_or_else(|| panic!("{id:?} is not catalogued"));
+            let got: Vec<u32> = match &d.bus {
+                Bus::Gpio { line } => vec![*line],
+                Bus::GpioPair { trigger, echo } => vec![*trigger, *echo],
+                Bus::GpioMatrix { rows, cols } => rows.iter().chain(cols.iter()).copied().collect(),
+                other => panic!("{id:?} is on {other:?}, not GPIO — cannot check pins"),
+            };
+            assert_eq!(
+                got,
+                want.to_vec(),
+                "{id:?} disagrees with {source}: catalog says {got:?}, vendor says {want:?}"
+            );
+        }
+    }
+
+    /// No two devices may claim the same line for incompatible roles.
+    ///
+    /// The range finder claimed 23 as an output TRIGGER while the PIR needs 23
+    /// as an input, so the driver drove the sensor's own output to ground. A
+    /// shared line is not always wrong — BCM22 is both the tilt switch and a
+    /// button row — but a line driven by one device and read by another is.
+    #[test]
+    fn no_device_drives_a_line_another_device_reads() {
+        let mut driven: Vec<(DeviceId, u32)> = Vec::new();
+        let mut read: Vec<(DeviceId, u32)> = Vec::new();
+        for d in CATALOG {
+            match &d.bus {
+                Bus::Gpio { line } => match d.kind {
+                    DeviceKind::Sensor => read.push((d.id, *line)),
+                    DeviceKind::Actuator => driven.push((d.id, *line)),
+                },
+                Bus::GpioPair { trigger, echo } => {
+                    driven.push((d.id, *trigger));
+                    read.push((d.id, *echo));
+                }
+                Bus::GpioMatrix { rows, cols } => {
+                    for c in cols.iter() {
+                        driven.push((d.id, *c));
+                    }
+                    for r in rows.iter() {
+                        read.push((d.id, *r));
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (writer, line) in &driven {
+            for (reader, rline) in &read {
+                assert!(
+                    !(line == rline && writer != reader),
+                    "{writer:?} drives BCM{line} which {reader:?} reads — \
+                     that is two outputs fighting, and it silenced the PIR for \
+                     this project's whole life"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_sensors_found_on_2026_09_15_are_all_catalogued() {
+        for id in [
+            DeviceId::Motion,
+            DeviceId::Sound,
+            DeviceId::Touch,
+            DeviceId::InfraRed,
+        ] {
+            assert!(lookup(id).is_some(), "{id:?} missing from the catalog");
         }
     }
 }

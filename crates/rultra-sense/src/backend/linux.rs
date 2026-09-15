@@ -73,12 +73,20 @@ impl LinuxBackend {
     /// sound travels ~343 m/s, the pulse covers the distance twice, and
     /// 1/(0.0343 cm/us) / 2 == 58.
     fn range_once() -> anyhow::Result<f64> {
-        use gpio_cdev::{Chip, EventRequestFlags, LineRequestFlags};
-        let mut chip = Chip::new("/dev/gpiochip0")?;
+        use gpio_cdev::{EventRequestFlags, LineRequestFlags};
+        // Pins come from the catalog, never from literals here. When these
+        // were hardcoded they said 23/24 — the PIR and the sound sensor — and
+        // the catalog could be corrected without the driver noticing, which is
+        // exactly how this driver spent the project timing the wrong hardware.
+        let (trigger, echo_pin) = match device::lookup(DeviceId::Range).map(|d| d.bus.clone()) {
+            Some(crate::Bus::GpioPair { trigger, echo }) => (trigger, echo),
+            other => anyhow::bail!("range is catalogued on {other:?}, not a GPIO pair"),
+        };
+        let mut chip = gpio_cdev::Chip::new("/dev/gpiochip0")?;
         let trig = chip
-            .get_line(23)?
+            .get_line(trigger)?
             .request(LineRequestFlags::OUTPUT, 0, "rultra-range")?;
-        let echo_line = chip.get_line(24)?;
+        let echo_line = chip.get_line(echo_pin)?;
         let echo = echo_line.events(
             LineRequestFlags::INPUT,
             EventRequestFlags::BOTH_EDGES,
@@ -153,6 +161,19 @@ impl LinuxBackend {
         }
         samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         Ok(samples[samples.len() / 2])
+    }
+
+    /// Read one GPIO line as an input.
+    ///
+    /// Never drives the line. The PIR spent this project silent because the
+    /// range-finder driver held BCM23 as an output, so a read path that could
+    /// accidentally become a write is the specific mistake to avoid here.
+    fn read_line(line: u32) -> anyhow::Result<bool> {
+        let mut chip = gpio_cdev::Chip::new("/dev/gpiochip0")?;
+        let h =
+            chip.get_line(line)?
+                .request(gpio_cdev::LineRequestFlags::INPUT, 0, "rultra-read")?;
+        Ok(h.get_value()? != 0)
     }
 
     fn read_cpu_temp() -> anyhow::Result<f64> {
@@ -424,6 +445,15 @@ impl Backend for LinuxBackend {
                         // only a triggered round trip does, which is a read.
                         "gpiochip0 (round trip required to confirm)".to_string(),
                     ),
+                    crate::Bus::GpioMatrix { rows, cols } => (
+                        std::path::Path::new("/dev/gpiochip0").exists(),
+                        // Presence of the chip says nothing about the matrix:
+                        // it can only be read by driving a column, and the rows
+                        // must be biased first or they decode as all-pressed.
+                        format!(
+                            "gpiochip0 rows {rows:?} cols {cols:?} (scan required; rows need pull-up)"
+                        ),
+                    ),
                     crate::Bus::Gpio { .. } => (
                         std::path::Path::new("/dev/gpiochip0").exists(),
                         "gpiochip0".to_string(),
@@ -452,6 +482,21 @@ impl Backend for LinuxBackend {
             DeviceId::Range => Value::Scalar {
                 n: Self::read_range_cm()?,
                 unit: "centimetre".into(),
+            },
+            // Digital sensors: one line, one level. `active` is what the
+            // device asserts, which is not always high - the sound and touch
+            // parts pull LOW on detection, per the vendor examples.
+            DeviceId::Motion => Value::Bool {
+                on: Self::read_line(23)?,
+            },
+            DeviceId::Sound => Value::Bool {
+                on: !Self::read_line(24)?,
+            },
+            DeviceId::Touch => Value::Bool {
+                on: !Self::read_line(17)?,
+            },
+            DeviceId::InfraRed => Value::Bool {
+                on: !Self::read_line(20)?,
             },
             other => anyhow::bail!("{other:?} has no read path on the hardware backend yet"),
         };
