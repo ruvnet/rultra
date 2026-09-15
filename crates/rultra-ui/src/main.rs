@@ -9,6 +9,7 @@
 mod api;
 mod asset;
 mod auth;
+pub mod lcd;
 mod state;
 mod toolkit;
 
@@ -103,6 +104,8 @@ async fn main() -> anyhow::Result<()> {
     // physical load is a constant, not a function of how many people are
     // watching.
     state::spawn_refresher();
+    // Rotating status pages on the character LCD (RULTRA_LCD=off to disable).
+    lcd::spawn();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!(

@@ -1424,6 +1424,7 @@ dependencies = [
  "anyhow",
  "axum",
  "rultra-evolve",
+ "rultra-lab",
  "rultra-sense",
  "rultra-spatial",
  "rultra-witness",

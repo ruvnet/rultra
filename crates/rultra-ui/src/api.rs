@@ -372,6 +372,52 @@ pub async fn cycle() -> impl IntoResponse {
 pub struct MatrixReq {
     pub pattern: Option<String>,
     pub text: Option<String>,
+    /// Beats per minute for `pattern: "beat"`. Clamped by the animation.
+    pub bpm: Option<u16>,
+    /// How many cycles to play. Bounded so one request cannot hold the SPI
+    /// bus — and the box's only confirmed-working display — indefinitely.
+    pub cycles: Option<u16>,
+}
+
+/// Longest a single `beat` request may run. A minute of heartbeat is plenty
+/// to watch; anything longer should be repeated calls, so the display stays
+/// responsive to whoever asks next.
+pub const MAX_BEAT_CYCLES: u16 = 60;
+
+/// How many cycles to actually play for a request.
+///
+/// A function rather than an inline `.min()` so the bound is testable without
+/// hardware — the handler that uses it only compiles on the Pi.
+pub fn beat_cycles(requested: Option<u16>) -> u16 {
+    // Zero would accept the request and draw nothing, which looks identical to
+    // a failure from the outside.
+    requested.unwrap_or(5).clamp(1, MAX_BEAT_CYCLES)
+}
+
+#[cfg(test)]
+mod beat_tests {
+    use super::*;
+
+    #[test]
+    fn a_request_cannot_hold_the_only_working_display_indefinitely() {
+        assert_eq!(beat_cycles(Some(10_000)), MAX_BEAT_CYCLES);
+    }
+
+    #[test]
+    fn zero_cycles_is_raised_to_one_rather_than_drawing_nothing() {
+        // Accepting the request and doing nothing is indistinguishable from
+        // a broken display to whoever is watching the panel.
+        assert_eq!(beat_cycles(Some(0)), 1);
+    }
+
+    #[test]
+    fn the_default_is_long_enough_to_see_but_short_enough_to_wait_out() {
+        let d = beat_cycles(None);
+        assert!((1..=10).contains(&d), "default {d} cycles");
+        // At the default rate that is a few seconds, not a minute.
+        let per_cycle_ms = 60_000 / rultra_spatial::visual::heart::DEFAULT_BPM as u64;
+        assert!(d as u64 * per_cycle_ms < 10_000);
+    }
 }
 
 pub async fn matrix(Json(req): Json<MatrixReq>) -> impl IntoResponse {
@@ -383,22 +429,52 @@ pub async fn matrix(Json(req): Json<MatrixReq>) -> impl IntoResponse {
             "heart" => LinuxBackend::matrix_draw(&HEART),
             "clear" => LinuxBackend::matrix_draw(&[0; 8]),
             "scroll" => LinuxBackend::matrix_scroll(req.text.as_deref().unwrap_or("RULTRA"), 60),
+            "beat" => {
+                use rultra_spatial::visual::heart;
+                let bpm = req.bpm.unwrap_or(heart::DEFAULT_BPM);
+                let cycles = beat_cycles(req.cycles);
+                let frames = heart::beat(bpm);
+                let mut out = Ok(());
+                'play: for _ in 0..cycles {
+                    for f in &frames {
+                        if let Err(e) = LinuxBackend::matrix_draw(&f.rows) {
+                            out = Err(e);
+                            break 'play;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(f.hold_ms));
+                    }
+                }
+                // Leave the panel showing the full heart rather than whatever
+                // phase the loop happened to end on — a display abandoned
+                // mid-contraction reads as a crash.
+                out.and_then(|()| LinuxBackend::matrix_draw(&HEART))
+            }
             other => Err(anyhow::anyhow!("unknown pattern: {other}")),
         };
-        return match r {
+        match r {
             Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
             Err(e) => (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": e.to_string() })),
             ),
-        };
+        }
     }
     #[cfg(not(all(target_os = "linux", feature = "hardware")))]
     {
-        let _ = req;
+        // Report what the request resolved to rather than discarding it. A
+        // caller developing against a non-hardware build can then check that
+        // their bpm and cycle count land where they expect, and the bound is
+        // exercised in every build instead of only on the Pi.
         (
             StatusCode::NOT_IMPLEMENTED,
-            Json(json!({ "error": "built without the hardware feature" })),
+            Json(json!({
+                "error": "built without the hardware feature",
+                "would_play": {
+                    "pattern": req.pattern.as_deref().unwrap_or("heart"),
+                    "bpm": req.bpm.unwrap_or(rultra_spatial::visual::heart::DEFAULT_BPM),
+                    "cycles": beat_cycles(req.cycles),
+                }
+            })),
         )
     }
 }
@@ -428,13 +504,13 @@ pub async fn lcd(Json(req): Json<LcdReq>) -> impl IntoResponse {
                 req.line2.as_deref().unwrap_or(""),
             ),
         };
-        return match r {
+        match r {
             Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
             Err(e) => (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": e.to_string() })),
             ),
-        };
+        }
     }
     #[cfg(not(all(target_os = "linux", feature = "hardware")))]
     {

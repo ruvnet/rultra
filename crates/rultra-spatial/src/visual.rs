@@ -142,3 +142,176 @@ mod tests {
         );
     }
 }
+
+/// A beating heart for the 8x8 matrix.
+///
+/// The matrix is the one display on this box confirmed working by an observer,
+/// so it is where an animation is actually worth building.
+///
+/// # Why the frames are nested
+///
+/// Each smaller heart's lit pixels are a strict subset of the next larger one's.
+/// That is what makes it read as a single shape contracting rather than as
+/// three different glyphs alternating, and [`frames_are_nested`] enforces it so
+/// a future edit cannot quietly break the illusion.
+///
+/// [`frames_are_nested`]: self
+pub mod heart {
+    /// Resting heart, smallest of the three.
+    pub const SMALL: [u8; 8] = [
+        0b00000000, 0b00000000, 0b00000000, 0b00100100, 0b00111100, 0b00111100, 0b00011000,
+        0b00000000,
+    ];
+
+    /// Mid-contraction.
+    pub const MEDIUM: [u8; 8] = [
+        0b00000000, 0b00000000, 0b01100110, 0b01111110, 0b01111110, 0b00111100, 0b00011000,
+        0b00000000,
+    ];
+
+    /// Full heart, matching the glyph the box has always drawn.
+    pub const LARGE: [u8; 8] = [
+        0b00000000, 0b01100110, 0b11111111, 0b11111111, 0b11111111, 0b01111110, 0b00111100,
+        0b00011000,
+    ];
+
+    /// One frame: what to draw and how long to hold it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Frame {
+        /// The eight row bytes to draw. Bit 7 is the leftmost column.
+        pub rows: [u8; 8],
+        /// How long to leave this frame on screen before the next.
+        pub hold_ms: u64,
+    }
+
+    /// Beats per minute a caller may ask for. Below the floor the animation
+    /// stops reading as a pulse; above the ceiling the SPI writes and the
+    /// eye both give up.
+    /// Slowest pulse that still reads as a heartbeat.
+    pub const MIN_BPM: u16 = 20;
+    /// Fastest the SPI writes and the eye can both keep up with.
+    pub const MAX_BPM: u16 = 200;
+    /// A resting human rate, which is what makes it read as a heart.
+    pub const DEFAULT_BPM: u16 = 72;
+
+    const _: () = assert!(MIN_BPM <= DEFAULT_BPM && DEFAULT_BPM <= MAX_BPM);
+
+    /// One full cardiac cycle: lub, dub, rest.
+    ///
+    /// Two contractions rather than one — a single pulse reads as a blink,
+    /// whereas the doubled beat is what makes it recognisable as a heart. The
+    /// proportions are the real thing's: systole is short, diastole is the
+    /// majority of the cycle.
+    pub fn beat(bpm: u16) -> Vec<Frame> {
+        let bpm = bpm.clamp(MIN_BPM, MAX_BPM);
+        let cycle_ms = 60_000u64 / bpm as u64;
+        // Sixteenths of the cycle, so the split is exact and the sum is the
+        // cycle length regardless of bpm.
+        let part = |n: u64| cycle_ms * n / 16;
+        let mut f = vec![
+            Frame {
+                rows: LARGE,
+                hold_ms: part(2),
+            }, // lub
+            Frame {
+                rows: MEDIUM,
+                hold_ms: part(1),
+            },
+            Frame {
+                rows: LARGE,
+                hold_ms: part(2),
+            }, // dub
+            Frame {
+                rows: MEDIUM,
+                hold_ms: part(2),
+            },
+            Frame {
+                rows: SMALL,
+                hold_ms: part(9),
+            }, // diastole: the long rest
+        ];
+        // Absorb the integer-division remainder into the rest, so a cycle is
+        // exactly 60000/bpm ms and the animation cannot drift.
+        let drawn: u64 = f.iter().map(|x| x.hold_ms).sum();
+        if let Some(last) = f.last_mut() {
+            last.hold_ms += cycle_ms.saturating_sub(drawn);
+        }
+        f
+    }
+}
+
+#[cfg(test)]
+mod heart_tests {
+    use super::heart::*;
+
+    fn lit(rows: &[u8; 8]) -> u32 {
+        rows.iter().map(|r| r.count_ones()).sum()
+    }
+
+    #[test]
+    fn frames_are_nested_so_the_heart_grows_rather_than_flickers() {
+        for (small, big) in [(SMALL, MEDIUM), (MEDIUM, LARGE)] {
+            for (y, (s, b)) in small.iter().zip(big.iter()).enumerate() {
+                assert_eq!(
+                    s & !b,
+                    0,
+                    "row {y}: smaller frame lights a pixel the larger one does not"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_three_sizes_are_strictly_ordered() {
+        assert!(
+            lit(&SMALL) < lit(&MEDIUM),
+            "small must be smaller than medium"
+        );
+        assert!(
+            lit(&MEDIUM) < lit(&LARGE),
+            "medium must be smaller than large"
+        );
+    }
+
+    #[test]
+    fn the_large_frame_is_still_the_heart_the_box_has_always_drawn() {
+        // The glyph an observer confirmed lit. Changing it would invalidate
+        // that observation, so it is pinned.
+        assert_eq!(LARGE, [0x00, 0x66, 0xff, 0xff, 0xff, 0x7e, 0x3c, 0x18]);
+    }
+
+    #[test]
+    fn a_cycle_lasts_exactly_the_requested_bpm() {
+        for bpm in [20u16, 45, 72, 110, 200] {
+            let total: u64 = beat(bpm).iter().map(|f| f.hold_ms).sum();
+            assert_eq!(total, 60_000 / bpm as u64, "bpm {bpm} drifted");
+        }
+    }
+
+    #[test]
+    fn the_rest_is_the_longest_phase_as_in_a_real_cycle() {
+        let f = beat(DEFAULT_BPM);
+        let rest = f.last().unwrap();
+        assert_eq!(rest.rows, SMALL);
+        let beats: u64 = f[..f.len() - 1].iter().map(|x| x.hold_ms).sum();
+        assert!(rest.hold_ms > beats, "diastole must dominate the cycle");
+    }
+
+    #[test]
+    fn it_is_a_double_beat_not_a_single_blink() {
+        let f = beat(DEFAULT_BPM);
+        let peaks = f.iter().filter(|x| x.rows == LARGE).count();
+        assert_eq!(peaks, 2, "lub-dub needs two contractions");
+    }
+
+    #[test]
+    fn an_absurd_bpm_is_clamped_rather_than_producing_a_zero_length_frame() {
+        for bpm in [0u16, 1, 5000] {
+            let f = beat(bpm);
+            assert!(
+                f.iter().all(|x| x.hold_ms > 0),
+                "bpm {bpm} produced a zero hold"
+            );
+        }
+    }
+}

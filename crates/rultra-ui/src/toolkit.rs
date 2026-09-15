@@ -52,10 +52,10 @@ pub async fn run_example(id: &str) -> J {
                     &rultra_spatial::visual::render(&room),
                     rultra_spatial::visual::intensity(&room),
                 );
-                return match r {
+                match r {
                     Ok(()) => json!({ "ok": true, "drew": format!("{:?}", room.proximity) }),
                     Err(e) => json!({ "ok": false, "error": e.to_string() }),
-                };
+                }
             }
             #[cfg(not(all(target_os = "linux", feature = "hardware")))]
             json!({ "ok": false, "error": "built without hardware support" })
@@ -67,13 +67,13 @@ pub async fn run_example(id: &str) -> J {
                 let s = state::latest();
                 let lux = state::snap_scalar(&s, rultra_sense::DeviceId::Light).unwrap_or(0.0);
                 let t = state::snap_scalar(&s, rultra_sense::DeviceId::CpuTemp).unwrap_or(0.0);
-                return match LinuxBackend::open()
+                match LinuxBackend::open()
                     .and_then(|b| b.lcd_write(&format!("lux {lux:.0}"), &format!("cpu {t:.1}C")))
                 {
                     Ok(()) => json!({ "ok": true, "wrote": format!("lux {lux:.0} / cpu {t:.1}C"),
                         "note": "the driver reported success; whether anything is VISIBLE is a separate question only a person can answer" }),
                     Err(e) => json!({ "ok": false, "error": e.to_string() }),
-                };
+                }
             }
             #[cfg(not(all(target_os = "linux", feature = "hardware")))]
             json!({ "ok": false, "error": "built without hardware support" })
@@ -138,10 +138,10 @@ fn drive_matrix(pattern: &str, text: Option<String>) -> J {
             "scroll" => LinuxBackend::matrix_scroll(text.as_deref().unwrap_or("RULTRA"), 60),
             o => return json!({ "ok": false, "error": format!("unknown pattern: {o}") }),
         };
-        return match r {
+        match r {
             Ok(()) => json!({ "ok": true, "pattern": pattern }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
-        };
+        }
     }
     #[cfg(not(all(target_os = "linux", feature = "hardware")))]
     json!({ "ok": false, "error": "built without hardware support" })

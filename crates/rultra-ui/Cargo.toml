@@ -25,6 +25,7 @@ rultra-sense = { path = "../rultra-sense" }
 rultra-evolve = { path = "../rultra-evolve" }
 rultra-witness = { path = "../rultra-witness" }
 rultra-spatial = { path = "../rultra-spatial" }
+rultra-lab = { path = "../rultra-lab" }
 
 [features]
 default = []
