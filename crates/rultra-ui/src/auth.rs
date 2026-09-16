@@ -117,6 +117,26 @@ pub fn local_listen_enabled(env: Option<&str>) -> bool {
     matches!(env, Some("1") | Some("true") | Some("yes"))
 }
 
+/// May a loopback caller **drive the hardware** without a token?
+///
+/// The stricter sibling of [`local_listen_enabled`], and off by default for a
+/// stronger reason: watching is passive, driving is not. A box that grants this
+/// lets anything running on it — any user, any process, any page a browser on
+/// the box happens to load — run cycles and move actuators.
+///
+/// It exists because the alternative on an appliance is worse in practice. The
+/// operator standing at the CrowPi cannot read the token: it lives in a
+/// root-only env file or a cloud secret, so the console in front of them asks
+/// for a credential they cannot produce, and the usual answer is to paste the
+/// token into the browser — which leaves it in a session store for anything
+/// on the box to read anyway. Making the grant explicit is more honest than
+/// pretending a token protects a machine whose console is physically present.
+///
+/// Still opt-in, still per-deployment, and never implied by `LOCAL_LISTEN`.
+pub fn local_control_enabled(env: Option<&str>) -> bool {
+    matches!(env, Some("1") | Some("true") | Some("yes"))
+}
+
 /// Which capability the presented credential carries, if any.
 ///
 /// The control token is checked first so that a deployment which accidentally
@@ -127,6 +147,7 @@ pub fn capability<'a>(
     read: Option<&str>,
     peer_loopback: bool,
     local_listen: bool,
+    local_control: bool,
     get: impl Fn(&str) -> Option<&'a str>,
 ) -> Option<Capability> {
     // No control token is only reachable on loopback — resolve_bind guarantees
@@ -150,6 +171,11 @@ pub fn capability<'a>(
         // the local grant would make a bad credential indistinguishable from
         // none, and hide a misconfigured client.
         return None;
+    }
+    // Control before Listen: a deployment that enables both means the stronger
+    // one, and silently capping it at Listen would be a confusing downgrade.
+    if peer_loopback && local_control {
+        return Some(Capability::Control);
     }
     if peer_loopback && local_listen {
         return Some(Capability::Listen);
@@ -197,11 +223,19 @@ pub fn authorized<'a>(
     read: Option<&str>,
     peer_loopback: bool,
     local_listen: bool,
+    local_control: bool,
     method: &str,
     path: &str,
     get: impl Fn(&str) -> Option<&'a str>,
 ) -> bool {
-    match capability(control, read, peer_loopback, local_listen, get) {
+    match capability(
+        control,
+        read,
+        peer_loopback,
+        local_listen,
+        local_control,
+        get,
+    ) {
         Some(held) => held >= required_for(method, path),
         None => false,
     }
@@ -220,7 +254,7 @@ mod tests {
         path: &str,
         g: impl Fn(&str) -> Option<&'a str>,
     ) -> bool {
-        authorized(c, r, false, false, m, path, g)
+        authorized(c, r, false, false, false, m, path, g)
     }
 
     fn none(_: &str) -> Option<&'static str> {
@@ -363,7 +397,14 @@ mod tests {
     #[test]
     fn identical_tokens_resolve_to_control_not_listen() {
         assert_eq!(
-            capability(Some("same"), Some("same"), false, false, bearer("same")),
+            capability(
+                Some("same"),
+                Some("same"),
+                false,
+                false,
+                false,
+                bearer("same")
+            ),
             Some(Capability::Control)
         );
     }
@@ -393,6 +434,7 @@ mod tests {
             None,
             true,
             true,
+            false,
             "GET",
             "/api/summary",
             none
@@ -408,6 +450,7 @@ mod tests {
             None,
             true,
             true,
+            false,
             "POST",
             "/api/cycle",
             none
@@ -417,6 +460,7 @@ mod tests {
             None,
             true,
             true,
+            false,
             "POST",
             "/api/matrix",
             none
@@ -430,6 +474,7 @@ mod tests {
             None,
             false,
             true,
+            false,
             "GET",
             "/api/summary",
             none
@@ -443,6 +488,7 @@ mod tests {
             None,
             true,
             false,
+            false,
             "GET",
             "/api/summary",
             none
@@ -454,7 +500,7 @@ mod tests {
     #[test]
     fn the_loopback_grant_never_downgrades_a_real_credential() {
         assert_eq!(
-            capability(Some("c"), None, true, true, bearer("c")),
+            capability(Some("c"), None, true, true, false, bearer("c")),
             Some(Capability::Control)
         );
         assert!(authorized(
@@ -462,6 +508,7 @@ mod tests {
             None,
             true,
             true,
+            false,
             "POST",
             "/api/cycle",
             bearer("c")
@@ -474,7 +521,7 @@ mod tests {
     #[test]
     fn a_wrong_token_from_loopback_is_refused_not_downgraded() {
         assert_eq!(
-            capability(Some("c"), None, true, true, bearer("wrong")),
+            capability(Some("c"), None, true, true, false, bearer("wrong")),
             None
         );
         assert!(!authorized(
@@ -482,9 +529,77 @@ mod tests {
             None,
             true,
             true,
+            false,
             "GET",
             "/api/s",
             bearer("wrong")
         ));
+    }
+    /// The whole point: an operator physically at the box can drive it.
+    #[test]
+    fn loopback_controls_without_a_token_when_control_is_granted() {
+        assert!(authorized(
+            Some("c"),
+            None,
+            true,
+            false,
+            true,
+            "POST",
+            "/api/cycle",
+            none
+        ));
+    }
+
+    /// A remote caller gets nothing from it, ever. The peer address comes from
+    /// the accepted socket, so this cannot be claimed by a header.
+    #[test]
+    fn a_remote_peer_never_gets_local_control() {
+        assert!(!authorized(
+            Some("c"),
+            None,
+            false,
+            true,
+            true,
+            "POST",
+            "/api/cycle",
+            none
+        ));
+    }
+
+    /// Granting control must not be reachable by accident: reads-only stays
+    /// reads-only, and the two flags are independent.
+    #[test]
+    fn local_listen_alone_still_cannot_write() {
+        assert!(!authorized(
+            Some("c"),
+            None,
+            true,
+            true,
+            false,
+            "POST",
+            "/api/cycle",
+            none
+        ));
+    }
+
+    /// Off unless explicitly set, and a wrong value does not enable it.
+    #[test]
+    fn local_control_is_off_by_default() {
+        assert!(!local_control_enabled(None));
+        assert!(!local_control_enabled(Some("")));
+        assert!(!local_control_enabled(Some("0")));
+        assert!(!local_control_enabled(Some("maybe")));
+        assert!(local_control_enabled(Some("1")));
+        assert!(local_control_enabled(Some("true")));
+    }
+
+    /// A bad credential still loses, even with the grant on. Otherwise a
+    /// misconfigured client would be indistinguishable from a working one.
+    #[test]
+    fn a_wrong_token_beats_the_local_grant() {
+        assert_eq!(
+            capability(Some("c"), None, true, true, true, bearer("wrong")),
+            None
+        );
     }
 }

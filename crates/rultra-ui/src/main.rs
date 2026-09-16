@@ -10,6 +10,7 @@ mod api;
 mod asset;
 mod auth;
 pub mod lcd;
+pub mod ruflo;
 mod state;
 mod toolkit;
 
@@ -37,6 +38,10 @@ async fn guard(req: Request, next: Next) -> Result<Response, axum::http::StatusC
     let read = std::env::var("RULTRA_UI_READ_TOKEN").ok();
     let local_listen =
         auth::local_listen_enabled(std::env::var("RULTRA_UI_LOCAL_LISTEN").ok().as_deref());
+    // Strictly stronger than LOCAL_LISTEN and never implied by it: this one
+    // lets a loopback caller move actuators without a credential.
+    let local_control =
+        auth::local_control_enabled(std::env::var("RULTRA_UI_LOCAL_CONTROL").ok().as_deref());
     // From the accepted socket, so a remote client cannot claim to be local.
     let peer_loopback = req
         .extensions()
@@ -51,6 +56,7 @@ async fn guard(req: Request, next: Next) -> Result<Response, axum::http::StatusC
         read.as_deref(),
         peer_loopback,
         local_listen,
+        local_control,
         &method,
         &path,
         |k| headers.get(k).and_then(|v| v.to_str().ok()),
